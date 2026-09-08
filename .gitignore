@@ -1,0 +1,12 @@
+node_modules/
+dist/
+reports/
+diag/
+assets/
+*.log
+*.tmp
+.env
+.env.*
+!.env.example
+.secrets/
+.controller/

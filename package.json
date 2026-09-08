@@ -1,0 +1,29 @@
+{
+  "name": "ag-capture-public-runner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AG 游戏公开分布式采集运行器",
+  "main": "ag.ts",
+  "scripts": {
+    "ag": "ts-node ag.ts",
+    "campaign": "ts-node scripts/campaign.ts",
+    "test": "node --test -r ts-node/register test/*.test.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "axios": "^1.13.2",
+    "decimal.js": "^10.6.0",
+    "fast-xml-parser": "^5.3.2",
+    "js-yaml": "^4.3.1",
+    "mongodb": "^7.0.0",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^24.10.1",
+    "@types/ws": "^8.18.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "license": "UNLICENSED"
+}
