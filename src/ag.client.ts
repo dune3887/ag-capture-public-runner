@@ -316,6 +316,11 @@ function genesisNextAction(root: Record<string, any>): string {
     }
 
     const state = String(findXmlValue(root, ['GameState']) || '').toUpperCase();
+    // Genesis 把免费局最后一帧标成 PostFreeSpins；其中虽然包含 FREE，
+    // 但客户端下一步已经回到普通 Spin，不能再补采一条空 FreeSpin。
+    if (state.startsWith('POST')) {
+        return 'SPIN';
+    }
     if (state.includes('FREE')) {
         return 'FREE_SPIN';
     }

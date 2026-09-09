@@ -130,6 +130,24 @@ test('parseResponseText maps Genesis spin win, balance, and game reference field
     assert.deepEqual(data.GameWageringInfo.currentBets, []);
 });
 
+test('parseResponseText treats Genesis PostFreeSpins as a completed round', () => {
+    const data = parseResponseText({
+        channel: '/service/game',
+        data: {
+            responseText: [
+                '<SpinResponse>',
+                '<SpinResult>',
+                '<FreeSpinsRemaining>0</FreeSpinsRemaining>',
+                '<NextSpinState><GameState>PostFreeSpins</GameState></NextSpinState>',
+                '</SpinResult>',
+                '</SpinResponse>',
+            ].join(''),
+        },
+    }, 'FreeSpin');
+
+    assert.equal(data.NextActionInfo.nextAction, 'SPIN');
+});
+
 test('parseResponseText maps XML handshake events into wagering data', () => {
     const data = parseResponseText({
         channel: '/service/game',
