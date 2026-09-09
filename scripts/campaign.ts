@@ -223,7 +223,6 @@ async function finalize(db: Db, dbName: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-    if (!MONGO_URI) throw new Error('MONGO_URI is required');
     const mode = String(process.argv[2] || process.env.MODE || '').trim();
     const manifestPath = path.resolve(process.cwd(), 'ag-games.yml');
     const targetGame = resolveGameTarget(
@@ -232,6 +231,11 @@ async function main(): Promise<void> {
         String(process.env.TARGET_DB || '').trim(),
     );
     const targetDbName = normalizeAgDatabaseName(targetGame.dbName);
+    if (mode === 'validate-target') {
+        console.log(`[target] game=${targetGame.gameId} database=${targetDbName}`);
+        return;
+    }
+    if (!MONGO_URI) throw new Error('MONGO_URI is required');
     const client = new MongoClient(MONGO_URI, mongoClientOptions());
     await client.connect();
     try {

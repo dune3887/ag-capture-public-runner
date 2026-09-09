@@ -1,0 +1,164 @@
+name: 拉取单个 AG 游戏 30 万条数据
+
+on:
+  workflow_dispatch:
+    inputs:
+      game_id:
+        description: ag-games.yml 中的游戏 ID
+        required: true
+        type: string
+      db_name:
+        description: 与游戏严格匹配的 ag_ 数据库名
+        required: true
+        type: string
+      resume_campaign_id:
+        description: 留空创建新 campaign；续拉时填写原 campaign ID
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ag-capture-${{ inputs.db_name }}
+  cancel-in-progress: false
+
+env:
+  TARGET_TOTAL: "300000"
+  WORKER_COUNT: "50"
+  CAMPAIGN_RUN_ID: ${{ inputs.resume_campaign_id || github.run_id }}
+  TARGET_GAME_ID: ${{ inputs.game_id }}
+  TARGET_DB: ${{ inputs.db_name }}
+  ONLY_GAME: ${{ inputs.game_id }}
+  TEST_RTP: "1"
+  FREE_CHOICE_PER_OPTION: "0"
+  SPIN_DELAY_MS: "200"
+  RETRY_ATTEMPTS: "5"
+  RETRY_DELAY_MS: "2000"
+  LOG_INTERVAL: "250"
+  STAGING_OVERAGE_LIMIT: "7"
+
+jobs:
+  canary:
+    if: github.repository == 'dune3887/ag-capture-public-runner'
+    name: 验证节点 ${{ matrix.worker }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        worker: [1, 2]
+    env:
+      MONGO_URI: ${{ secrets.MONGO_URI }}
+      CAMPAIGN_RUN_ID: ${{ github.run_id }}
+      CAPTURE_CAMPAIGN_ID: ${{ github.run_id }}-canary
+      CAPTURE_WORKER_INDEX: ${{ matrix.worker }}
+      CAPTURE_OWNER_ID: gh-${{ github.run_id }}-canary-${{ matrix.worker }}
+      CAPTURE_LEASE_ID: gh_${{ github.run_id }}_canary_${{ matrix.worker }}
+      AG_SIMULATE_COLLECTION: simulate_gh_${{ inputs.db_name }}_${{ github.run_id }}_canary_${{ matrix.worker }}
+      SPIN_LIMIT: "10"
+      CANARY_TARGET: "10"
+      CONCURRENT_PER_GAME: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - name: 校验游戏与数据库白名单
+        run: npm run campaign -- validate-target
+      - name: 拉取十条隔离样本
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npm run ag; then
+              exit 0
+            fi
+            echo "canary attempt ${attempt} incomplete; resuming staging collection"
+            if [ "${attempt}" -lt 3 ]; then sleep $((attempt * 30)); fi
+          done
+          exit 1
+      - name: 校验并删除验证集合
+        run: npm run campaign -- verify-canary
+
+  prepare:
+    if: github.repository == 'dune3887/ag-capture-public-runner'
+    name: 计算精确缺口
+    needs: canary
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.prepare.outputs.matrix }}
+      existing: ${{ steps.prepare.outputs.existing }}
+    env:
+      MONGO_URI: ${{ secrets.MONGO_URI }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - id: prepare
+        name: 读取正式集合并分配五十份配额
+        run: npm run campaign -- prepare
+
+  capture:
+    if: github.repository == 'dune3887/ag-capture-public-runner'
+    name: 拉取节点 ${{ matrix.index }} / ${{ matrix.quota }} 条
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 50
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    env:
+      MONGO_URI: ${{ secrets.MONGO_URI }}
+      CAPTURE_CAMPAIGN_ID: ${{ inputs.resume_campaign_id || github.run_id }}
+      CAPTURE_WORKER_INDEX: ${{ matrix.index }}
+      CAPTURE_OWNER_ID: gh-${{ inputs.resume_campaign_id || github.run_id }}-worker-${{ matrix.index }}
+      CAPTURE_LEASE_ID: gh_${{ inputs.resume_campaign_id || github.run_id }}_worker_${{ matrix.index }}
+      AG_SIMULATE_COLLECTION: simulate_gh_${{ inputs.db_name }}_${{ inputs.resume_campaign_id || github.run_id }}_worker_${{ matrix.index }}
+      SPIN_LIMIT: ${{ matrix.quota }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - name: 校验游戏与数据库白名单
+        run: npm run campaign -- validate-target
+      - name: 按节点配额拉取并支持断点续拉
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npm run ag; then
+              exit 0
+            fi
+            echo "capture attempt ${attempt} incomplete; resuming staging collection"
+            if [ "${attempt}" -lt 3 ]; then sleep $((attempt * 30)); fi
+          done
+          exit 1
+
+  finalize:
+    if: github.repository == 'dune3887/ag-capture-public-runner'
+    name: 合并并验收 30 万条
+    needs: [prepare, capture]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      MONGO_URI: ${{ secrets.MONGO_URI }}
+      EXPECTED_EXISTING: ${{ needs.prepare.outputs.existing }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - name: 服务端合并、精确计数并清理临时集合
+        run: npm run campaign -- finalize
