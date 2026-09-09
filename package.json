@@ -7,6 +7,7 @@
   "scripts": {
     "ag": "ts-node ag.ts",
     "campaign": "ts-node scripts/campaign.ts",
+    "public-audit": "ts-node scripts/public-audit.ts",
     "test": "node --test -r ts-node/register test/*.test.ts",
     "check": "tsc --noEmit"
   },
