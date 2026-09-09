@@ -20,7 +20,7 @@ function positiveInteger(value: unknown, label: string): number {
 
 export function normalizeRunId(value: unknown): string {
     const normalized = String(value || '').trim();
-    if (!/^[A-Za-z0-9.-]{1,80}$/.test(normalized)) {
+    if (!/^[A-Za-z0-9._-]{1,120}$/.test(normalized)) {
         throw new Error('invalid campaign run id');
     }
     return normalized;

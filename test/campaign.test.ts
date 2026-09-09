@@ -32,6 +32,7 @@ test('staging names are deterministic and reject unsafe run ids', () => {
         'simulate_gh_ag_MoMummyMightyPyramid_12345_canary_2',
     );
     assert.equal(normalizeRunId('12345-1'), '12345-1');
+    assert.equal(normalizeRunId('ag_MoMummy-20260909'), 'ag_MoMummy-20260909');
     assert.throws(() => normalizeRunId('../bad'), /invalid campaign run id/);
     assert.throws(
         () => stagingCollectionName('other_game', '12345', 1, 'worker'),
