@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 import yaml from 'js-yaml';
+import { execFileSync, spawnSync } from 'node:child_process';
+import path from 'node:path';
 
 const workflowPath = '.github/workflows/capture-ag-game.yml';
 
@@ -58,3 +60,38 @@ test('workflow never contains a database URI or admin operation', () => {
     assert.doesNotMatch(workflow, /mongodb(?:\+srv)?:\/\//i);
     assert.doesNotMatch(workflow, /createUser|dropUser|userAdmin|root/i);
 });
+
+for (const job of ['canary', 'capture']) {
+    for (const [statuses, expectedExit, expectedCalls] of [
+        ['78 0', 78, 1],
+        ['1 78 0', 78, 2],
+        ['1 0', 0, 2],
+        ['1 1 0', 0, 3],
+        ['1 1 1 0', 1, 3],
+    ] as const) {
+        test(`${job} retry shell handles statuses ${statuses} without masking deterministic failure`, () => {
+            const parsed = yaml.load(fs.readFileSync(workflowPath, 'utf8')) as {
+                jobs: Record<string, { steps: Array<{ shell?: string; run?: string }> }>;
+            };
+            const script = parsed.jobs[job].steps.find((step) => step.shell === 'bash' && step.run?.includes('npm run ag'))?.run;
+            assert.ok(script, 'must execute the actual workflow retry shell');
+            const bash = process.platform === 'win32'
+                ? path.resolve(execFileSync('git', ['--exec-path'], { encoding: 'utf8' }).trim(), '../../../bin/bash.exe')
+                : 'bash';
+            const result = spawnSync(bash, ['--noprofile', '--norc', '-eo', 'pipefail', '-c', `
+                statuses=(${statuses})
+                calls=0
+                npm() {
+                    echo TEST_NPM_CALL
+                    code="\${statuses[$calls]:-99}"
+                    calls=$((calls + 1))
+                    return "$code"
+                }
+                sleep() { :; }
+                ${script}
+            `], { encoding: 'utf8', timeout: 10000 });
+            assert.equal(result.status, expectedExit, result.stderr || result.error?.message);
+            assert.equal((result.stdout.match(/TEST_NPM_CALL/g) || []).length, expectedCalls);
+        });
+    }
+}

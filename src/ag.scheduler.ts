@@ -71,6 +71,9 @@ export function isDeterministicCaptureError(error: unknown): boolean {
     return /unsupported AG nextAction|MalformedRequest|RuntimeError|missing supported next action|AG integrity:|no selectable option|exceeded \d+ follow-up steps|protocol negotiation failed|协议协商失败/i.test(message);
 }
 
+// 工作流在此退出码上立即失败，禁止换进程后用已有 staging 配额掩盖协议错误。
+export const DETERMINISTIC_CAPTURE_EXIT_CODE = 78;
+
 export function throwIfSchedulerFailed(failures: Error[]): void {
     if (failures.length === 0) {
         return;
@@ -124,6 +127,7 @@ class AGGameRunner {
     private leaseLost = false;
     private leaseAcquired = false;
     private readonly workerErrors: Error[] = [];
+    private fatalError: Error | null = null;
 
     constructor(
         private readonly game: AGGameConfig,
@@ -143,7 +147,7 @@ class AGGameRunner {
     }
 
     private shouldStop(): boolean {
-        return this.isShuttingDown() || this.leaseLost || isCaptureComplete(this.state) || this.reachedRoundLimit();
+        return this.fatalError !== null || this.isShuttingDown() || this.leaseLost || isCaptureComplete(this.state) || this.reachedRoundLimit();
     }
 
     private async acquireLease(): Promise<boolean> {
@@ -291,8 +295,14 @@ class AGGameRunner {
         let reservedChoice: AGCaptureTask | null = null;
 
         for (let attempt = 0; attempt <= this.options.retryAttempts; attempt += 1) {
+            if (this.fatalError) {
+                return { session: activeSession, round: null, reservedChoice: null, error: this.fatalError };
+            }
             try {
                 activeSession = await this.ensureSession(activeSession);
+                if (this.fatalError) {
+                    return { session: activeSession, round: null, reservedChoice: null, error: this.fatalError };
+                }
                 reservedChoice = null;
                 const round = await captureAGRound(activeSession, {
                     chooseOption: (pickOptions) => {
@@ -309,13 +319,16 @@ class AGGameRunner {
                     reservedChoice = null;
                 }
                 const normalized = error instanceof Error ? error : new Error(String(error));
+                // 必须先通知所有线程，再等待 session 清理；否则迟到回合会继续写入共享配额。
+                if (isDeterministicCaptureError(normalized)) {
+                    this.fatalError ||= normalized;
+                }
                 activeSession = await this.resetSession(activeSession);
+                if (this.fatalError) {
+                    return { session: activeSession, round: null, reservedChoice: null, error: this.fatalError };
+                }
                 if (this.isShuttingDown()) {
                     return { session: activeSession, round: null, reservedChoice: null, error: new Error('shutdown requested') };
-                }
-                // 协议错误会与功能触发强相关。换一局重试会悄悄丢掉该功能回合并造成样本偏差，必须立即阻断游戏。
-                if (isDeterministicCaptureError(normalized)) {
-                    return { session: activeSession, round: null, reservedChoice: null, error: normalized };
                 }
                 if (attempt < this.options.retryAttempts) {
                     console.warn(
@@ -381,6 +394,10 @@ class AGGameRunner {
             while (!this.shouldStop()) {
                 const result = await this.captureOnce(workerId, session);
                 session = result.session;
+                if (this.fatalError) {
+                    if (result.reservedChoice) markTaskFailure(this.state, result.reservedChoice);
+                    return;
+                }
                 if (!result.round) {
                     if (this.isShuttingDown()) {
                         return;
@@ -446,6 +463,8 @@ class AGGameRunner {
 
             const workerCount = Math.max(1, this.options.workersPerGame);
             await Promise.all(Array.from({ length: workerCount }, (_, index) => this.workerLoop(index + 1)));
+            // fatal 前已发出的写入仍可能完成配额，但配额完成不能覆盖协议失败。
+            if (this.fatalError) throw this.fatalError;
             const suffix = this.reachedRoundLimit() ? ' round-limit' : '';
             if (isCaptureComplete(this.state)) {
                 console.log(`[game] done ${this.game.gameId} ${formatState(this.state)}`);
@@ -460,8 +479,13 @@ class AGGameRunner {
             }
         } finally {
             this.options.shutdownSignal?.removeEventListener('abort', shutdownListener);
-            await this.closeAllSessions();
-            await this.releaseLease();
+            try {
+                await this.closeAllSessions();
+                await this.releaseLease();
+            } finally {
+                // 清理失败或其他线程的写入异常也不能把已知 fatal 降级为可重试错误。
+                if (this.fatalError) throw this.fatalError;
+            }
         }
     }
 }

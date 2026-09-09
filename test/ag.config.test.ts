@@ -51,3 +51,16 @@ test('default game lease expires quickly after abnormal process exit', () => {
     assert.equal(GAME_LEASE_MS, 90000);
     assert.equal(GAME_LEASE_RENEW_MS, 20000);
 });
+
+for (const value of ['0', '-2', 'not-a-number']) {
+    test(`invalid concurrency ${value} falls back to one worker`, () => {
+        const result = spawnSync(process.execPath, [
+            '-r', 'ts-node/register', '-e',
+            "process.stdout.write(String(require('./config').CONCURRENT_PER_GAME))",
+        ], {
+            cwd: process.cwd(), env: { ...process.env, CONCURRENT_PER_GAME: value }, encoding: 'utf8',
+        });
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stdout, '1');
+    });
+}

@@ -75,6 +75,10 @@ jobs:
           for attempt in 1 2 3; do
             if npm run ag; then
               exit 0
+            else
+              status=$?
+              # 确定性协议错误不能通过续拉已有 staging 配额变成成功。
+              if [ "${status}" -eq 78 ]; then exit "${status}"; fi
             fi
             echo "canary attempt ${attempt} incomplete; resuming staging collection"
             if [ "${attempt}" -lt 3 ]; then sleep $((attempt * 30)); fi
@@ -139,6 +143,10 @@ jobs:
           for attempt in 1 2 3; do
             if npm run ag; then
               exit 0
+            else
+              status=$?
+              # 确定性协议错误不能通过续拉已有 staging 配额变成成功。
+              if [ "${status}" -eq 78 ]; then exit "${status}"; fi
             fi
             echo "capture attempt ${attempt} incomplete; resuming staging collection"
             if [ "${attempt}" -lt 3 ]; then sleep $((attempt * 30)); fi

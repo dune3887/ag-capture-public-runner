@@ -23,7 +23,7 @@ import {
 } from './config';
 import { applyGameShard } from './src/ag.plan';
 import { AGMongoStore } from './src/ag.mongo';
-import { runAGScheduler } from './src/ag.scheduler';
+import { DETERMINISTIC_CAPTURE_EXIT_CODE, isDeterministicCaptureError, runAGScheduler } from './src/ag.scheduler';
 import { AGGameConfig } from './src/ag.types';
 
 interface AGGamesFile {
@@ -216,6 +216,7 @@ async function main() {
         ].join(' '),
     );
 
+    let captureFailure: unknown;
     try {
         await runAGScheduler(games, {
             store,
@@ -240,11 +241,19 @@ async function main() {
             gameLeaseRenewMs: GAME_LEASE_RENEW_MS,
             shutdownSignal: shutdownController.signal,
         });
+    } catch (error) {
+        captureFailure = error;
+        throw error;
     } finally {
         process.off('SIGINT', signalHandler);
         process.off('SIGTERM', signalHandler);
         process.off('SIGHUP', signalHandler);
-        await store.close();
+        try {
+            await store.close();
+        } catch (error) {
+            // 保留原协议失败及其退出码，避免清理时的网络异常触发进程级续跑。
+            throw isDeterministicCaptureError(captureFailure) ? captureFailure : error;
+        }
         if (shutdownSignalName) {
             process.exitCode = shutdownSignalName === 'SIGINT' ? 130 : 143;
         }
@@ -255,6 +264,6 @@ if (require.main === module) {
     main().catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`fatal: ${message}`);
-        process.exit(1);
+        process.exit(isDeterministicCaptureError(error) ? DETERMINISTIC_CAPTURE_EXIT_CODE : 1);
     });
 }
