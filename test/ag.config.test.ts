@@ -27,7 +27,7 @@ test('standalone defaults are safe for an isolated canary', () => {
     assert.equal(WORKER_START_JITTER_MS, 0);
 });
 
-test('standalone concurrency can be explicitly raised per game', () => {
+test('standalone concurrency can be explicitly raised to four per game', () => {
     const result = spawnSync(
         process.execPath,
         [
@@ -38,13 +38,13 @@ test('standalone concurrency can be explicitly raised per game', () => {
         ],
         {
             cwd: process.cwd(),
-            env: { ...process.env, CONCURRENT_PER_GAME: '3' },
+            env: { ...process.env, CONCURRENT_PER_GAME: '4' },
             encoding: 'utf8',
         },
     );
 
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.stdout, '3');
+    assert.equal(result.stdout, '4');
 });
 
 test('default game lease expires quickly after abnormal process exit', () => {
