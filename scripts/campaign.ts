@@ -8,7 +8,7 @@ import { loadGameTargets, resolveGameTarget } from './game-target';
 
 export const TARGET_COLLECTION = 'simulate';
 export const DEFAULT_TARGET_TOTAL = 300_000;
-export const DEFAULT_WORKER_COUNT = 50;
+export const DEFAULT_WORKER_COUNT = 20;
 
 function positiveInteger(value: unknown, label: string): number {
     const parsed = Number(value);

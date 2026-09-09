@@ -5,18 +5,25 @@ import yaml from 'js-yaml';
 
 const workflowPath = '.github/workflows/capture-ag-game.yml';
 
-test('workflow is manual-only and runs fifty isolated workers', () => {
+test('workflow is manual-only and runs twenty isolated workers', () => {
     const workflow = fs.readFileSync(workflowPath, 'utf8');
     const parsed = yaml.load(workflow) as {
         on: Record<string, unknown>;
         permissions: Record<string, unknown>;
-        jobs: Record<string, { strategy?: Record<string, unknown> }>;
+        env: Record<string, unknown>;
+        jobs: Record<string, {
+            strategy?: Record<string, unknown>;
+            env?: Record<string, unknown>;
+        }>;
     };
 
     assert.deepEqual(Object.keys(parsed.on), ['workflow_dispatch']);
     assert.equal(parsed.permissions.contents, 'read');
-    assert.equal(parsed.jobs.capture.strategy?.['max-parallel'], 50);
+    assert.equal(parsed.env.WORKER_COUNT, '20');
+    assert.equal(parsed.jobs.capture.strategy?.['max-parallel'], 20);
     assert.equal(parsed.jobs.canary.strategy?.['max-parallel'], 2);
+    assert.equal(parsed.jobs.canary.env?.CONCURRENT_PER_GAME, '1');
+    assert.equal(parsed.jobs.capture.env?.CONCURRENT_PER_GAME, '3');
     assert.match(workflow, /github\.repository == 'dune3887\/ag-capture-public-runner'/);
 });
 

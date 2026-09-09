@@ -5,7 +5,7 @@
 ## 运行约束
 
 - 单个游戏的目标是正式 `simulate` 集合恰好 300,000 条，并且每条都有 RTP 标签。
-- 工作流先启动 2 个隔离验证 Job，验证通过后拆分为 50 个采集 Job；`max-parallel: 50` 是上限，实际同时运行数量由 GitHub 调度和账户限制决定。
+- 工作流先启动 2 个隔离验证 Job，每个验证 Job 保持单线程；验证通过后拆分为 20 个采集 Job，每个采集 Job 在单个 Node.js 进程内运行 3 个采集线程。`max-parallel: 20` 与 GitHub Free 的 Runner 并发上限一致；同一 Job 的 3 个线程共用一个出口 IP。
 - 每个 Job 只写入带数据库名、campaign ID 和 worker 编号的隔离集合，最后统一校验并合并。
 - 工作流只从 GitHub Actions Secret 读取临时连接信息；临时数据库用户只拥有当前游戏数据库的 `readWrite` 权限，不具备管理员权限。
 - 公开仓库不响应 `push` 或 `pull_request`，只允许仓库所有者手动 `workflow_dispatch`。

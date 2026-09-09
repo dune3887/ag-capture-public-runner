@@ -25,7 +25,7 @@ concurrency:
 
 env:
   TARGET_TOTAL: "300000"
-  WORKER_COUNT: "50"
+  WORKER_COUNT: "20"
   CAMPAIGN_RUN_ID: ${{ inputs.resume_campaign_id || github.run_id }}
   TARGET_GAME_ID: ${{ inputs.game_id }}
   TARGET_DB: ${{ inputs.db_name }}
@@ -102,7 +102,7 @@ jobs:
           cache: npm
       - run: npm ci
       - id: prepare
-        name: 读取正式集合并分配五十份配额
+        name: 读取正式集合并分配二十份配额
         run: npm run campaign -- prepare
 
   capture:
@@ -113,7 +113,7 @@ jobs:
     timeout-minutes: 350
     strategy:
       fail-fast: false
-      max-parallel: 50
+      max-parallel: 20
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     env:
       MONGO_URI: ${{ secrets.MONGO_URI }}
@@ -123,6 +123,7 @@ jobs:
       CAPTURE_LEASE_ID: gh_${{ inputs.resume_campaign_id || github.run_id }}_worker_${{ matrix.index }}
       AG_SIMULATE_COLLECTION: simulate_gh_${{ inputs.db_name }}_${{ inputs.resume_campaign_id || github.run_id }}_worker_${{ matrix.index }}
       SPIN_LIMIT: ${{ matrix.quota }}
+      CONCURRENT_PER_GAME: "3"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

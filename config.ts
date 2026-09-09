@@ -22,7 +22,7 @@ export const SPIN_DELAY_MS = numberEnv('SPIN_DELAY_MS', 200);
 export const LOG_INTERVAL = numberEnv('LOG_INTERVAL', 100);
 
 export const CONCURRENT_GAMES = 1;
-export const CONCURRENT_PER_GAME = 1;
+export const CONCURRENT_PER_GAME = positiveNumberEnv('CONCURRENT_PER_GAME', 1);
 export const SESSION_READY_DELAY_MS = numberEnv('SESSION_READY_DELAY_MS', 250);
 export const SESSION_RECYCLE_DELAY_MS = numberEnv('SESSION_RECYCLE_DELAY_MS', 1000);
 export const WORKER_START_JITTER_MS = 0;

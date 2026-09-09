@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import {
     CONCURRENT_GAMES,
     CONCURRENT_PER_GAME,
@@ -24,6 +25,26 @@ test('standalone defaults are safe for an isolated canary', () => {
     assert.equal(SESSION_READY_DELAY_MS, 250);
     assert.equal(SESSION_RECYCLE_DELAY_MS, 1000);
     assert.equal(WORKER_START_JITTER_MS, 0);
+});
+
+test('standalone concurrency can be explicitly raised per game', () => {
+    const result = spawnSync(
+        process.execPath,
+        [
+            '-r',
+            'ts-node/register',
+            '-e',
+            "process.stdout.write(String(require('./config').CONCURRENT_PER_GAME))",
+        ],
+        {
+            cwd: process.cwd(),
+            env: { ...process.env, CONCURRENT_PER_GAME: '3' },
+            encoding: 'utf8',
+        },
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, '3');
 });
 
 test('default game lease expires quickly after abnormal process exit', () => {

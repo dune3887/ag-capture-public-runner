@@ -2,23 +2,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
     buildWorkerMatrix,
+    DEFAULT_WORKER_COUNT,
     normalizeRunId,
     splitQuota,
     stagingCollectionName,
     validateStagingCounts,
 } from '../scripts/campaign';
 
-test('quota split is exact for 299990 rows across 50 workers', () => {
-    const quotas = splitQuota(299_990, 50);
-    assert.equal(quotas.length, 50);
-    assert.deepEqual(quotas.slice(0, 3), [6000, 6000, 6000]);
-    assert.deepEqual(quotas.slice(-3), [5999, 5999, 5999]);
+test('quota split is exact for 299990 rows across 20 workers', () => {
+    assert.equal(DEFAULT_WORKER_COUNT, 20);
+    const quotas = splitQuota(299_990, 20);
+    assert.equal(quotas.length, 20);
+    assert.deepEqual(quotas.slice(0, 3), [15000, 15000, 15000]);
+    assert.deepEqual(quotas.slice(-3), [14999, 14999, 14999]);
     assert.equal(quotas.reduce((sum, value) => sum + value, 0), 299_990);
 });
 
 test('worker matrix preserves the exact target', () => {
-    const matrix = buildWorkerMatrix(10, 300_000, 50);
-    assert.equal(matrix.include.length, 50);
+    const matrix = buildWorkerMatrix(10, 300_000, 20);
+    assert.equal(matrix.include.length, 20);
     assert.equal(matrix.include.reduce((sum, entry) => sum + entry.quota, 10), 300_000);
 });
 
@@ -41,7 +43,7 @@ test('staging names are deterministic and reject unsafe run ids', () => {
 });
 
 test('matrix rejects a target below the current valid count', () => {
-    assert.throws(() => buildWorkerMatrix(300_001, 300_000, 50), /below existing/);
+    assert.throws(() => buildWorkerMatrix(300_001, 300_000, 20), /below existing/);
 });
 
 test('staging permits only bounded valid overage from concurrent sessions', () => {
