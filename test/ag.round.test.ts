@@ -391,7 +391,7 @@ test('captureAGRound maps BONUS_SPIN to the official bonusSpin event', async () 
 
 test('captureAGRound maps newly observed feature actions to their official events', async () => {
     const mappings = [
-        ['RIBBON_WHEEL_SPIN', 'ribbonWheelSpin'],
+        ['RIBBON_WHEEL_SPIN', 'RibbonWheelSpin'],
         ['WHEEL_SPIN', 'wheelSpin'],
         ['CLOWN_BALL_DROP', 'clownBallDrop'],
         ['BONUS', 'BonusSpin'],
@@ -436,6 +436,51 @@ test('captureAGRound maps newly observed feature actions to their official event
         assert.equal(round.isFeature, true, action);
         assert.equal(round.win, 1, action);
     }
+});
+
+test('Buffalo Chief uses the official RibbonWheelSpin request and completes the feature round', async () => {
+    const calls: Array<{ event: string; params: Record<string, any> | null }> = [];
+    const followUpParams = { coinSize: '0.01', numberOfCoins: '1,1' };
+    const session = {
+        getSpinParams: () => followUpParams,
+        getActionParams: () => followUpParams,
+        getPickParams: (pickIndex: number | string) => ({ pickIndex: String(pickIndex) }),
+        getFallbackBet: () => 0.02,
+        callGameData: async (event: string, params: Record<string, any> | null) => {
+            calls.push({ event, params });
+            if (event === 'Spin') {
+                return {
+                    PlayerBalanceInfo: { wager: 0.02, preWagerBalance: 100, resultAmount: 0, balance: 99.98 },
+                    NextActionInfo: { nextAction: 'RIBBON_WHEEL_SPIN' },
+                    RibbonWheelInfo: { currentSymbolPosition: { reelIndex: 0, symbolIndex: 0 } },
+                };
+            }
+            if (event === 'RibbonWheelSpin') {
+                return {
+                    PlayerBalanceInfo: { resultAmount: 0, balance: 99.98 },
+                    NextActionInfo: { nextAction: 'FREE_SPIN' },
+                    RibbonWheelInfo: { freeSpinsWon: 1 },
+                };
+            }
+            if (event === 'freeSpin') {
+                return {
+                    PlayerBalanceInfo: { resultAmount: 1, balance: 100.98 },
+                    FreeSpinsInfo: { accumulativeWin: 1 },
+                    NextActionInfo: { nextAction: 'SPIN' },
+                };
+            }
+            throw new Error(`unexpected event ${event}`);
+        },
+    };
+
+    const round = await captureAGRound(session);
+
+    assert.deepEqual(calls.map((call) => call.event), ['Spin', 'RibbonWheelSpin', 'freeSpin']);
+    assert.deepEqual(calls[1].params, followUpParams);
+    assert.equal(round.win, 1);
+    assert.equal(round.data.freeChoiceSteps[0].action, 'RIBBON_WHEEL_SPIN');
+    assert.equal(round.data.freeChoiceSteps[0].event, 'RibbonWheelSpin');
+    assert.doesNotThrow(() => validateReplaySequence(round.data));
 });
 
 test('captureAGRound retries a follow-up state with the next event candidate before failing the round', async () => {

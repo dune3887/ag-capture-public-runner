@@ -113,7 +113,7 @@ function resolveFollowUpEvent(action: string): string {
         FEATURE: 'feature',
         HAMMER_SPIN: 'hammerSpin',
         HOLD_AND_GOLD_SPIN: 'holdAndGoldSpin',
-        RIBBON_WHEEL_SPIN: 'ribbonWheelSpin',
+        RIBBON_WHEEL_SPIN: 'RibbonWheelSpin',
         WHEEL_SPIN: 'wheelSpin',
         // 官方 Wild Leprecoins Double Luck 客户端的两个自动转盘事件（均为小写）。
         GREEN_WHEEL_SPIN: 'greenwheelspin',
