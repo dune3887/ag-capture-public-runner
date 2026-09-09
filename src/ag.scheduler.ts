@@ -18,7 +18,7 @@ import {
     AGCompletedRound,
     AGGameConfig,
 } from './ag.types';
-import { captureAGRound, selectFreeChoiceOption } from './ag.round';
+import { captureAGRound, isInitialSpinRuntimeError, selectFreeChoiceOption } from './ag.round';
 
 export interface AGSchedulerOptions {
     validationSamples?: number;
@@ -66,7 +66,18 @@ function sleep(ms: number, shutdownSignal?: AbortSignal): Promise<void> {
     });
 }
 
+export class AGCaptureFailureError extends Error {
+    constructor(message: string, readonly failures: Error[]) {
+        super(message);
+        this.name = 'AGCaptureFailureError';
+    }
+}
+
 export function isDeterministicCaptureError(error: unknown): boolean {
+    if (isInitialSpinRuntimeError(error)) return false;
+    if (error instanceof AGCaptureFailureError) {
+        return error.failures.some((failure) => isDeterministicCaptureError(failure));
+    }
     const message = error instanceof Error ? error.message : String(error);
     return /unsupported AG nextAction|MalformedRequest|RuntimeError|missing supported next action|AG integrity:|no selectable option|exceeded \d+ follow-up steps|protocol negotiation failed|协议协商失败/i.test(message);
 }
@@ -78,8 +89,9 @@ export function throwIfSchedulerFailed(failures: Error[]): void {
     if (failures.length === 0) {
         return;
     }
-    throw new Error(
+    throw new AGCaptureFailureError(
         `${failures.length} game capture failed: ${failures.map((error) => error.message).join('; ')}`,
+        [...failures],
     );
 }
 
@@ -475,8 +487,9 @@ class AGGameRunner {
                 console.log(`[game] done ${this.game.gameId} ${formatState(this.state)}`);
             } else if (this.workerErrors.length > 0) {
                 console.warn(`[game] incomplete ${this.game.gameId} worker-errors=${this.workerErrors.length} ${formatState(this.state)}`);
-                throw new Error(
+                throw new AGCaptureFailureError(
                     `AG capture incomplete: ${formatState(this.state)}; ${this.workerErrors.map((error) => error.message).join('; ')}`,
+                    [...this.workerErrors],
                 );
             } else {
                 console.log(`[game] stopped ${this.game.gameId}${suffix} ${formatState(this.state)}`);

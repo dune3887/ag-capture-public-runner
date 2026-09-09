@@ -3,12 +3,54 @@ import assert from 'node:assert/strict';
 import { validateReplaySequence } from '../src/ag.mongo';
 import { parseResponseText } from '../src/ag.client';
 import {
+    AGInitialSpinRuntimeError,
     captureAGRound,
     isFreeState,
     isPickState,
     isRoundTerminal,
     selectFreeChoiceOption,
 } from '../src/ag.round';
+
+test('captureAGRound marks only an initial Spin RuntimeError as session-retryable', async () => {
+    const session = {
+        getSpinParams: () => ({ coinSize: '0.03', numberOfCoins: '1,1' }),
+        getPickParams: (pickIndex: number | string) => ({ pickIndex: String(pickIndex) }),
+        getFallbackBet: () => 0.06,
+        callGameData: async () => {
+            throw new Error('Spin: {"type":"RuntimeError"}');
+        },
+    };
+    await assert.rejects(
+        captureAGRound(session),
+        (error: unknown) => error instanceof AGInitialSpinRuntimeError
+            && error.message === 'Spin: {"type":"RuntimeError"}',
+    );
+});
+
+test('captureAGRound does not downgrade a follow-up RuntimeError', async () => {
+    let initial = true;
+    const session = {
+        getSpinParams: () => ({ coinSize: '0.03', numberOfCoins: '1,1' }),
+        getFollowUpParams: () => ({ coinSize: '0.03', numberOfCoins: '1,1' }),
+        getPickParams: (pickIndex: number | string) => ({ pickIndex: String(pickIndex) }),
+        getFallbackBet: () => 0.06,
+        callGameData: async (event: string) => {
+            if (initial && event === 'Spin') {
+                initial = false;
+                return {
+                    PlayerBalanceInfo: { wager: 0.06, balance: 99.94, resultAmount: 0 },
+                    NextActionInfo: { nextAction: 'FREE_SPIN' },
+                };
+            }
+            throw new Error(`${event}: {"type":"RuntimeError"}`);
+        },
+    };
+    await assert.rejects(captureAGRound(session), (error: unknown) => (
+        error instanceof Error
+        && !(error instanceof AGInitialSpinRuntimeError)
+        && /RuntimeError/.test(error.message)
+    ));
+});
 
 test('旧式 COLLECT 同时带官方结算事件时保留完整局和真实余额', async () => {
     const session = {

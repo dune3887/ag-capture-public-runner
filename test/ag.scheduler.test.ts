@@ -6,6 +6,7 @@ import { AGSchedulerOptions, getCaptureSampleGroups, isDeterministicCaptureError
 import { AGCompletedRound } from '../src/ag.types';
 import { AGMongoStore, validateCompletedRound } from '../src/ag.mongo';
 import { RoxorCometDSession } from '../src/ag.client';
+import { AGInitialSpinRuntimeError } from '../src/ag.round';
 import * as capture from '../src/ag.round';
 
 function round(optionIndex: number, isFeature: boolean): AGCompletedRound {
@@ -50,6 +51,11 @@ test('choice-only collection continues after the overall sample is complete', ()
 test('protocol failures are deterministic and must not be replaced by a fresh round', () => {
     assert.equal(isDeterministicCaptureError(new Error('unsupported AG nextAction: BONUS_ENTRY')), true);
     assert.equal(isDeterministicCaptureError(new Error('pick: {"type":"MalformedRequest"}')), true);
+    assert.equal(
+        isDeterministicCaptureError(new AGInitialSpinRuntimeError('Spin: {"type":"RuntimeError"}')),
+        false,
+    );
+    assert.equal(isDeterministicCaptureError(new Error('FreeSpin: {"type":"RuntimeError"}')), true);
     assert.equal(isDeterministicCaptureError(new Error('read ETIMEDOUT')), false);
 });
 
@@ -58,6 +64,12 @@ test('scheduler propagates incomplete game failures to the process', () => {
     assert.throws(
         () => throwIfSchedulerFailed([new Error('connect refused')]),
         /1 game capture failed.*connect refused/,
+    );
+    assert.throws(
+        () => throwIfSchedulerFailed([
+            new AGInitialSpinRuntimeError('Spin: {"type":"RuntimeError"}'),
+        ]),
+        (error: unknown) => error instanceof Error && !isDeterministicCaptureError(error),
     );
 });
 
@@ -103,11 +115,14 @@ function schedulerFixture(t: TestContext, spinLimit: number) {
 
 const flushWorkers = () => new Promise<void>((resolve) => setImmediate(resolve));
 
-function runFailureCLI(message: string, cleanupFails = false) {
+function runFailureCLI(message: string, cleanupFails = false, initialSpin = false) {
     const script = `
         const scheduler = require('./src/ag.scheduler');
         scheduler.runAGScheduler = async () => {
-            scheduler.throwIfSchedulerFailed([new Error(process.env.TEST_CAPTURE_ERROR)]);
+            const failure = process.env.TEST_INITIAL_SPIN === '1'
+                ? new (require('./src/ag.round').AGInitialSpinRuntimeError)(process.env.TEST_CAPTURE_ERROR)
+                : new Error(process.env.TEST_CAPTURE_ERROR);
+            scheduler.throwIfSchedulerFailed([failure]);
         };
         if (process.env.TEST_CLOSE_FAILURE === '1') {
             require('./src/ag.mongo').AGMongoStore.prototype.close = async () => { throw new Error('read ECONNRESET'); };
@@ -117,7 +132,7 @@ function runFailureCLI(message: string, cleanupFails = false) {
     `;
     return spawnSync(process.execPath, ['-r', 'ts-node/register', '-e', script], {
         cwd: process.cwd(), encoding: 'utf8', timeout: 30000,
-        env: { ...process.env, TEST_CAPTURE_ERROR: message, TEST_CLOSE_FAILURE: cleanupFails ? '1' : '0', ONLY_GAME: '', MONGO_URI: '' },
+        env: { ...process.env, TEST_CAPTURE_ERROR: message, TEST_CLOSE_FAILURE: cleanupFails ? '1' : '0', TEST_INITIAL_SPIN: initialSpin ? '1' : '0', ONLY_GAME: '', MONGO_URI: '' },
     });
 }
 
@@ -205,7 +220,7 @@ test('ordinary storage network failure remains retryable instead of becoming fat
     assert.equal(runFailureCLI(error.message).status, 1);
 });
 
-for (const message of ['AG integrity: missing round result', 'unsupported AG nextAction: BONUS_ENTRY']) {
+for (const message of ['AG integrity: missing round result', 'unsupported AG nextAction: BONUS_ENTRY', 'FreeSpin: {"type":"RuntimeError"}']) {
     test(`three workers stop before storing late rounds during fatal session cleanup: ${message}`, async (t) => {
         t.mock.timers.enable({ apis: ['setTimeout'] });
         const fixture = schedulerFixture(t, 2);
@@ -326,6 +341,52 @@ test('temporary network failure still retries and completes the quota', async (t
     assert.equal(fixture.stored.length, 1);
 });
 
+test('initial Spin RuntimeError recycles one session and stores only the retried round', async (t) => {
+    const fixture = schedulerFixture(t, 1);
+    Object.assign(fixture.options, {
+        workersPerGame: 1,
+        retryAttempts: 2,
+        retryDelayMs: 0,
+        sessionRecycleDelayMs: 0,
+    });
+    let calls = 0;
+    t.mock.method(capture, 'captureAGRound', async () => {
+        if (++calls === 1) {
+            throw new AGInitialSpinRuntimeError('Spin: {"type":"RuntimeError"}');
+        }
+        return storableRound();
+    });
+
+    assert.equal(await fixture.run(), null);
+    assert.equal(calls, 2);
+    assert.equal(fixture.stored.length, 1);
+});
+
+test('other workers keep storing while one initial Spin retry is backing off', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const fixture = schedulerFixture(t, 2);
+    Object.assign(fixture.options, {
+        workersPerGame: 3,
+        retryAttempts: 1,
+        retryDelayMs: 1000,
+        sessionRecycleDelayMs: 0,
+    });
+    let calls = 0;
+    t.mock.method(capture, 'captureAGRound', async () => {
+        if (++calls === 1) {
+            throw new AGInitialSpinRuntimeError('Spin: {"type":"RuntimeError"}');
+        }
+        return storableRound();
+    });
+
+    const outcome = fixture.run();
+    await flushWorkers();
+    await flushWorkers();
+    assert.equal(fixture.stored.length, 2);
+    t.mock.timers.tick(1000);
+    assert.equal(await outcome, null);
+});
+
 for (const [message, exitCode, cleanupFails] of [
     ['AG integrity: corrupt result', 78, false],
     ['unsupported AG nextAction: BONUS_ENTRY', 78, false],
@@ -338,3 +399,8 @@ for (const [message, exitCode, cleanupFails] of [
         assert.match(result.stderr, /fatal: 1 game capture failed/);
     });
 }
+
+test('CLI keeps an initial Spin RuntimeError retryable', () => {
+    const initial = runFailureCLI('Spin: {"type":"RuntimeError"}', false, true);
+    assert.equal(initial.status, 1, initial.stderr);
+});

@@ -1,5 +1,16 @@
 import { AGCompletedRound, AGRoundStep } from './ag.types';
 
+export class AGInitialSpinRuntimeError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'AGInitialSpinRuntimeError';
+    }
+}
+
+export function isInitialSpinRuntimeError(error: unknown): error is AGInitialSpinRuntimeError {
+    return error instanceof AGInitialSpinRuntimeError;
+}
+
 export interface AGPickOption {
     pickIndex: number | string;
     requestPickIndex?: number | string;
@@ -508,7 +519,16 @@ export async function captureAGRound(
         ? session.getInitialRoundRequest()
         : { event: 'Spin', parameters: session.getSpinParams() };
     const sessionPreBalance = session.getBalance?.();
-    const trigger = await session.callGameData(initial.event, initial.parameters);
+    let trigger: Record<string, any>;
+    try {
+        trigger = await session.callGameData(initial.event, initial.parameters);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/^spin$/i.test(initial.event) && /RuntimeError/i.test(message)) {
+            throw new AGInitialSpinRuntimeError(message);
+        }
+        throw error;
+    }
     const initialRequest = session.getLastGameRequest?.() || initial;
     let bet = resolveBet(trigger, session.getFallbackBet());
     let betSource = Number(trigger.PlayerBalanceInfo?.wager) > 0 ? 'response' : 'request-fallback';
