@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { buildCaptureState, ensureChoiceTasks } from '../src/ag.plan';
 import { AGSchedulerOptions, getCaptureSampleGroups, isDeterministicCaptureError, runAGScheduler, throwIfSchedulerFailed } from '../src/ag.scheduler';
 import { AGCompletedRound } from '../src/ag.types';
-import { AGMongoStore } from '../src/ag.mongo';
+import { AGMongoStore, validateCompletedRound } from '../src/ag.mongo';
 import { RoxorCometDSession } from '../src/ag.client';
 import * as capture from '../src/ag.round';
 
@@ -102,6 +102,108 @@ function schedulerFixture(t: TestContext, spinLimit: number) {
 }
 
 const flushWorkers = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+function runFailureCLI(message: string, cleanupFails = false) {
+    const script = `
+        const scheduler = require('./src/ag.scheduler');
+        scheduler.runAGScheduler = async () => {
+            scheduler.throwIfSchedulerFailed([new Error(process.env.TEST_CAPTURE_ERROR)]);
+        };
+        if (process.env.TEST_CLOSE_FAILURE === '1') {
+            require('./src/ag.mongo').AGMongoStore.prototype.close = async () => { throw new Error('read ECONNRESET'); };
+        }
+        process.argv = [process.execPath, require('path').resolve('ag.ts'), '--game-limit=1'];
+        require('module').runMain();
+    `;
+    return spawnSync(process.execPath, ['-r', 'ts-node/register', '-e', script], {
+        cwd: process.cwd(), encoding: 'utf8', timeout: 30000,
+        env: { ...process.env, TEST_CAPTURE_ERROR: message, TEST_CLOSE_FAILURE: cleanupFails ? '1' : '0', ONLY_GAME: '', MONGO_URI: '' },
+    });
+}
+
+function storableRound(): AGCompletedRound {
+    return {
+        ...round(0, false),
+        data: {
+            roundEvents: ['Spin'], roundTrigger: {}, winResolution: { method: 'protocol' },
+            PlayerBalanceInfo: { resultAmount: 0 },
+        },
+    };
+}
+
+for (const quotaCompletes of [false, true]) {
+    for (const cleanupFails of [false, true]) {
+        test(`store validation publishes fatal across three workers: quotaCompletes=${quotaCompletes}, cleanupFails=${cleanupFails}`, async (t) => {
+            t.mock.timers.enable({ apis: ['setTimeout'] });
+            const fixture = schedulerFixture(t, quotaCompletes ? 1 : 2);
+            if (cleanupFails) {
+                t.mock.method(fixture.store, 'releaseGameLease', async () => { throw new Error('read ECONNRESET'); });
+            }
+            const attempts = Array.from({ length: 3 }, () => deferred<AGCompletedRound>());
+            const started = deferred<void>();
+            const inserting = deferred<void>();
+            const inserted = deferred<void>();
+            const beforeFatal = storableRound();
+            let calls = 0;
+            t.mock.method(capture, 'captureAGRound', () => {
+                const attempt = attempts[calls++];
+                if (calls === 3) started.resolve();
+                assert.ok(attempt, 'store fatal must prevent new rounds');
+                return attempt.promise;
+            });
+            let validations = 0;
+            t.mock.method(fixture.store, 'insertRound', async (_db, value) => {
+                validations += 1;
+                // 保留生产 insertRound 的真实完整性校验入口，只替换校验后的数据库写入。
+                validateCompletedRound(value);
+                fixture.stored.push(value);
+                if (value === beforeFatal) {
+                    inserting.resolve();
+                    await inserted.promise;
+                }
+            });
+            const outcome = fixture.run();
+            await started.promise;
+            if (quotaCompletes) {
+                attempts[1].resolve(beforeFatal);
+                await inserting.promise;
+            }
+            const invalid = storableRound();
+            invalid.bet = 0;
+            attempts[0].resolve(invalid);
+            await fixture.closing.promise;
+            if (quotaCompletes) {
+                inserted.resolve();
+                await flushWorkers();
+            } else {
+                attempts[1].resolve(storableRound());
+            }
+            attempts[2].resolve(storableRound());
+            await flushWorkers();
+            const storedDuringCleanup = [...fixture.stored];
+            t.mock.timers.tick(1000);
+            const error = await outcome;
+            assert.deepEqual(storedDuringCleanup, quotaCompletes ? [beforeFatal] : [], 'late rounds must not reach staging during fatal cleanup');
+            assert.equal(validations, quotaCompletes ? 2 : 1, 'late rounds must not even reach insertRound');
+            assert.equal(calls, 3);
+            assert.ok(error, 'a completed quota must not cover the store validation failure');
+            const processResult = runFailureCLI(error.message);
+            assert.equal(processResult.status, 78, processResult.stderr);
+            assert.match(error.message, /AG integrity: bet must be positive/);
+        });
+    }
+}
+
+test('ordinary storage network failure remains retryable instead of becoming fatal', async (t) => {
+    const fixture = schedulerFixture(t, 1);
+    Object.assign(fixture.options, { workersPerGame: 1, sessionRecycleDelayMs: 0 });
+    t.mock.method(capture, 'captureAGRound', async () => storableRound());
+    t.mock.method(fixture.store, 'insertRound', async () => { throw new Error('read ECONNRESET'); });
+    const error = await fixture.run();
+    assert.ok(error);
+    assert.match(error.message, /read ECONNRESET/);
+    assert.equal(runFailureCLI(error.message).status, 1);
+});
 
 for (const message of ['AG integrity: missing round result', 'unsupported AG nextAction: BONUS_ENTRY']) {
     test(`three workers stop before storing late rounds during fatal session cleanup: ${message}`, async (t) => {
@@ -231,21 +333,7 @@ for (const [message, exitCode, cleanupFails] of [
     ['AG integrity: corrupt result', 78, true],
 ] as const) {
     test(`CLI propagates failure as exit ${exitCode}, cleanupFails=${cleanupFails}: ${message}`, () => {
-        const script = `
-            const scheduler = require('./src/ag.scheduler');
-            scheduler.runAGScheduler = async () => {
-                scheduler.throwIfSchedulerFailed([new Error(process.env.TEST_CAPTURE_ERROR)]);
-            };
-            if (process.env.TEST_CLOSE_FAILURE === '1') {
-                require('./src/ag.mongo').AGMongoStore.prototype.close = async () => { throw new Error('read ECONNRESET'); };
-            }
-            process.argv = [process.execPath, require('path').resolve('ag.ts'), '--game-limit=1'];
-            require('module').runMain();
-        `;
-        const result = spawnSync(process.execPath, ['-r', 'ts-node/register', '-e', script], {
-            cwd: process.cwd(), encoding: 'utf8', timeout: 30000,
-            env: { ...process.env, TEST_CAPTURE_ERROR: message, TEST_CLOSE_FAILURE: cleanupFails ? '1' : '0', ONLY_GAME: '', MONGO_URI: '' },
-        });
+        const result = runFailureCLI(message, cleanupFails);
         assert.equal(result.status, exitCode, result.stderr);
         assert.match(result.stderr, /fatal: 1 game capture failed/);
     });

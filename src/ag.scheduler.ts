@@ -418,6 +418,11 @@ class AGGameRunner {
                     await sleep(this.options.spinDelayMs, this.options.shutdownSignal);
                 }
             }
+        } catch (error) {
+            const normalized = error instanceof Error ? error : new Error(String(error));
+            // 存储前完整性校验也会失败，必须在 session 清理前通知其他线程。
+            if (isDeterministicCaptureError(normalized)) this.fatalError ||= normalized;
+            throw normalized;
         } finally {
             await this.resetSession(session);
         }
