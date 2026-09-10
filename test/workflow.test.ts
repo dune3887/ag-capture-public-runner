@@ -25,7 +25,7 @@ test('workflow is manual-only and runs twenty isolated workers', () => {
     assert.equal(parsed.jobs.capture.strategy?.['max-parallel'], 20);
     assert.equal(parsed.jobs.canary.strategy?.['max-parallel'], 2);
     assert.equal(parsed.jobs.canary.env?.CONCURRENT_PER_GAME, '1');
-    assert.equal(parsed.jobs.capture.env?.CONCURRENT_PER_GAME, '4');
+    assert.equal(parsed.jobs.capture.env?.CONCURRENT_PER_GAME, '8');
     assert.match(workflow, /github\.repository == 'dune3887\/ag-capture-public-runner'/);
 });
 

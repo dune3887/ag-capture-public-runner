@@ -127,7 +127,7 @@ jobs:
       CAPTURE_LEASE_ID: gh_${{ inputs.resume_campaign_id || github.run_id }}_worker_${{ matrix.index }}
       AG_SIMULATE_COLLECTION: simulate_gh_${{ inputs.db_name }}_${{ inputs.resume_campaign_id || github.run_id }}_worker_${{ matrix.index }}
       SPIN_LIMIT: ${{ matrix.quota }}
-      CONCURRENT_PER_GAME: "4"
+      CONCURRENT_PER_GAME: "8"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
