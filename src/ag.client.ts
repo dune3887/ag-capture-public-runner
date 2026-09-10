@@ -759,18 +759,20 @@ export class RoxorCometDSession {
     getPickProtocol(action: string, response: Record<string, any>, revealedIndexes: readonly number[] = []): AGPickProtocol | undefined {
         // Lunar Festival 1.0.24 用 id 区分五选一免费玩法和 12 格奖池，响应可能保留旧奖池字段。
         const lunar = this.game.backendArtifactId === 'rgp-game-gold-stacks-88-lunar-festival';
+        // Royal Monkey 1.0.3：免费选择协议 ID 为 1..3（UI 映射 1、3、2）。
+        const royalMonkey = this.game.backendArtifactId === 'rgp-game-gold-stacks-88-royal-monkey';
         const pickKind = response.NextActionInfo?.id;
-        if (lunar && action === 'PICK') {
+        if ((lunar || royalMonkey) && action === 'PICK') {
             if (pickKind === 'FREE_GAME_PICK') {
                 // 官方 sw 映射：四种固定免费玩法为 1..4，MYSTERY 为 5；与 UI 位置不同。
-                return {event: 'Pick', kind: 'choice', options: Array.from({length: 5}, (_, index) => ({pickIndex: index + 1, requestPickIndex: index + 1}))};
+                return {event: 'Pick', kind: 'choice', options: Array.from({length: royalMonkey ? 3 : 5}, (_, index) => ({pickIndex: index + 1, requestPickIndex: index + 1}))};
             }
-            if (pickKind !== 'JACKPOT') throw new Error('AG integrity: unknown Lunar Pick branch');
+            if (pickKind !== 'JACKPOT') throw new Error(royalMonkey ? 'AG integrity: unknown Royal Monkey Pick branch' : 'AG integrity: unknown Lunar Pick branch');
         }
         // 官方 Turtle 1.0.6 / Dancing Foo 1.0.12：每盘 12 格，RESET 清盘，RESUME 只恢复当前揭示集合。
         // 同一大局可以多次进入奖池，不能沿用整局递增索引或上一盘本地历史。
         if (action === 'PICK' && ['rgp-game-gold-stacks-88-turtle-kingdom',
-            'rgp-game-gold-stacks-88-dancing-foo'].includes(this.game.backendArtifactId || '') || (lunar && action === 'PICK' && pickKind === 'JACKPOT')) {
+            'rgp-game-gold-stacks-88-dancing-foo'].includes(this.game.backendArtifactId || '') || ((lunar || royalMonkey) && action === 'PICK' && pickKind === 'JACKPOT')) {
             const info = response.JackpotPickResultInfo;
             const revealed = info === undefined ? [] : info?.revealedSymbols;
             if (!Array.isArray(revealed)) throw new Error('AG integrity: invalid jackpot revealedSymbols');
