@@ -1,0 +1,42 @@
+name: AG 固定二十通道滚动采集
+run-name: AG rolling ${{ inputs.queue_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      queue_id:
+        description: 本地控制器创建的队列 ID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ag-capture-global
+  cancel-in-progress: false
+
+jobs:
+  rolling:
+    if: github.repository == 'dune3887/ag-capture-public-runner'
+    name: 滚动通道 ${{ matrix.lane }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        lane: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - name: 顺序滚动处理各游戏独立份额
+        run: node -r ts-node/register scripts/rolling-worker.ts
+        env:
+          AG_ROLLING_PAYLOAD: ${{ secrets.AG_ROLLING_PAYLOAD }}
+          QUEUE_ID: ${{ inputs.queue_id }}
+          ROLLING_LANE: ${{ matrix.lane }}

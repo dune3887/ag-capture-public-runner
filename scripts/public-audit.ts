@@ -3,6 +3,7 @@ import fs from 'fs';
 
 const exactAllowed = new Set([
     '.github/workflows/capture-ag-game.yml',
+    '.github/workflows/capture-ag-rolling.yml',
     '.gitignore',
     'README.md',
     'ag-games.yml',
@@ -12,6 +13,8 @@ const exactAllowed = new Set([
     'package.json',
     'scripts/campaign.ts',
     'scripts/game-target.ts',
+    'scripts/rolling-contract.ts',
+    'scripts/rolling-worker.ts',
     'scripts/public-audit.ts',
     'tsconfig.json',
 ]);
