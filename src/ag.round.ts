@@ -739,6 +739,18 @@ export async function captureAGRound(
         encounteredFeature = encounteredFeature || isFeatureAction(action);
     }
 
+    if (!action) {
+        // 缺失动作不能证明整局结束。仅记录响应结构，不把会话或用户字段值写入日志。
+        const lastStep = steps[steps.length - 1];
+        throw new Error('AG integrity: missing nextAction ' + JSON.stringify({
+            event: lastStep?.event || initialRequest.event,
+            previousAction: lastStep?.action || null,
+            stepCount: steps.length,
+            responseKeys: Object.keys(current || {}).sort(),
+            nextActionType: typeof current?.NextActionInfo?.nextAction,
+        }));
+    }
+
     const isFeature = optionIndex > 0 || encounteredFeature;
     let balance = resolveFinalBalance(trigger, steps);
     if (activeLegacyPickMode === 'legacy-stateful-spin-pick' && requiresSessionReset) {
