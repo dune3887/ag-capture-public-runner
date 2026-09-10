@@ -6,7 +6,7 @@ import {
     DEFAULT_LANGUAGE,
 } from '../config';
 import { AGGameConfig } from './ag.types';
-import { AGPickProtocol, hasExplicitXmlBalance } from './ag.round';
+import { AGPickProtocol, AGProviderResponseError, hasExplicitXmlBalance } from './ag.round';
 
 interface CometDMessage {
     id?: string;
@@ -474,6 +474,13 @@ export function parseResponseText(msg: CometDMessage, event: string): Record<str
     } else {
         data = JSON.parse(value);
     }
+    if (data && !Array.isArray(data) && Object.keys(data).length === 1
+        && Object.prototype.hasOwnProperty.call(data, 'error')) {
+        throw new AGProviderResponseError(event, 'error-only');
+    }
+    if (data?.ErrorInfo?.type === 'MalformedRequest') {
+        throw new AGProviderResponseError(event, 'MalformedRequest');
+    }
     if (data?.ErrorInfo) {
         throw new Error(`${event}: ${JSON.stringify(data.ErrorInfo)}`);
     }
@@ -717,6 +724,10 @@ export class RoxorCometDSession {
     getSpinParams(): Record<string, any> {
         if (this.protocol === 'legacy-events') {
             return buildLegacySpinParams(this.coinSize, this.numberOfCoins);
+        }
+        // 官方 Wicked Winnings II 1.0.7 只发送投注两字段，不附带通用缓存。
+        if (this.game.backendArtifactId === 'rgp-game-wicked-winnings-2') {
+            return buildSpinParams(this.coinSize, this.numberOfCoins);
         }
         return buildSpinParams(this.coinSize, this.numberOfCoins, this.activeSymbols);
     }

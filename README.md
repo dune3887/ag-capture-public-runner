@@ -57,3 +57,5 @@ NEXT_TRAIN 使用官方小写 nexttrain 与空对象参数。已核对 Joyful Pa
 验证：权威完整125/125、公开完整172/172、双方typecheck通过；公开审计通过，依赖0漏洞；独立6/6针对性测试通过，无新增Critical/Important。
 
 仅取证运行可将 workflow_dispatch 的 diagnostic_only 设为 true：节点退出失败后不再启动下一次采集进程，自动合并作业始终跳过；已完成的 staging 数据保留供排查。正常运行默认 false。
+
+初始 Spin 收到明确 MalformedRequest 或仅含 error 的响应时，舍弃本次未完成结果，复用现有有限重试机制重建会话；不将其解释为网络故障。奖励后续动作错误与缺失正常结果仍阻断，禁止残局入库。Wicked Winnings II 投注请求依照官方 1.0.7 限定 coinSize、numberOfCoins 两字段。

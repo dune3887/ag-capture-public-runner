@@ -18,7 +18,7 @@ import {
     AGCompletedRound,
     AGGameConfig,
 } from './ag.types';
-import { captureAGRound, isInitialSpinRuntimeError, selectFreeChoiceOption } from './ag.round';
+import { captureAGRound, AGInitialSpinResponseError, isInitialSpinRuntimeError, selectFreeChoiceOption } from './ag.round';
 
 export interface AGSchedulerOptions {
     validationSamples?: number;
@@ -74,7 +74,7 @@ export class AGCaptureFailureError extends Error {
 }
 
 export function isDeterministicCaptureError(error: unknown): boolean {
-    if (isInitialSpinRuntimeError(error)) return false;
+    if (isInitialSpinRuntimeError(error) || error instanceof AGInitialSpinResponseError) return false;
     if (error instanceof AGCaptureFailureError) {
         return error.failures.some((failure) => isDeterministicCaptureError(failure));
     }

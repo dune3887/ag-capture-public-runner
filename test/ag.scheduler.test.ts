@@ -6,7 +6,7 @@ import { AGSchedulerOptions, getCaptureSampleGroups, isDeterministicCaptureError
 import { AGCompletedRound } from '../src/ag.types';
 import { AGMongoStore, validateCompletedRound } from '../src/ag.mongo';
 import { RoxorCometDSession } from '../src/ag.client';
-import { AGInitialSpinRuntimeError } from '../src/ag.round';
+import { AGInitialSpinRuntimeError, AGInitialSpinResponseError } from '../src/ag.round';
 import * as capture from '../src/ag.round';
 
 function round(optionIndex: number, isFeature: boolean): AGCompletedRound {
@@ -408,3 +408,23 @@ test('CLI keeps an initial Spin RuntimeError retryable', () => {
     const initial = runFailureCLI('Spin: {"type":"RuntimeError"}', false, true);
     assert.equal(initial.status, 1, initial.stderr);
 });
+
+for (const reason of ['MalformedRequest', 'error-only'] as const) {
+    for (const persistent of [false, true]) {
+        test('initial response recovery resets sessions with bounded retries '+reason+' persistent='+persistent, async(t)=>{
+            const fixture=schedulerFixture(t,1);
+            Object.assign(fixture.options,{workersPerGame:1,retryAttempts:2,retryDelayMs:0,sessionRecycleDelayMs:0});
+            const sessions: unknown[]=[];
+            t.mock.method(capture,'captureAGRound',async(session:unknown)=>{
+                sessions.push(session);
+                if(persistent || sessions.length===1)throw new AGInitialSpinResponseError(reason);
+                return storableRound();
+            });
+            const error=await fixture.run();
+            assert.equal(Boolean(error),persistent);
+            assert.equal(sessions.length,persistent?3:2);
+            assert.equal(new Set(sessions).size,sessions.length,'must create a fresh session after rejection');
+            assert.equal(fixture.stored.length,persistent?0:1,'failed response must never be stored');
+        });
+    }
+}

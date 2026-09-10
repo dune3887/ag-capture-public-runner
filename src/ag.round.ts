@@ -1,5 +1,20 @@
 import { AGCompletedRound, AGRoundStep } from './ag.types';
 
+// 仅精确识别供应方拒绝响应；不依赖错误文本猜测请求阶段。
+export class AGProviderResponseError extends Error {
+    constructor(readonly event: string, readonly reason: 'MalformedRequest' | 'error-only') {
+        super('AG integrity: provider response ' + JSON.stringify({event, reason}));
+        this.name = 'AGProviderResponseError';
+    }
+}
+
+export class AGInitialSpinResponseError extends Error {
+    constructor(readonly reason: 'MalformedRequest' | 'error-only') {
+        super('initial Spin discarded; reset session: ' + reason);
+        this.name = 'AGInitialSpinResponseError';
+    }
+}
+
 export class AGInitialSpinRuntimeError extends Error {
     constructor(message: string) {
         super(message);
@@ -531,6 +546,10 @@ export async function captureAGRound(
     try {
         trigger = await session.callGameData(initial.event, initial.parameters);
     } catch (error) {
+        if (/^spin$/i.test(initial.event) && error instanceof AGProviderResponseError
+            && error.event.toLowerCase() === initial.event.toLowerCase()) {
+            throw new AGInitialSpinResponseError(error.reason);
+        }
         const message = error instanceof Error ? error.message : String(error);
         if (/^spin$/i.test(initial.event) && /RuntimeError/i.test(message)) {
             throw new AGInitialSpinRuntimeError(message);
