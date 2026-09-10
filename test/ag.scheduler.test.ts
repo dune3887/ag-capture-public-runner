@@ -409,7 +409,7 @@ test('CLI keeps an initial Spin RuntimeError retryable', () => {
     assert.equal(initial.status, 1, initial.stderr);
 });
 
-for (const reason of ['MalformedRequest', 'error-only'] as const) {
+for (const reason of ['error-only'] as const) {
     for (const persistent of [false, true]) {
         test('initial response recovery resets sessions with bounded retries '+reason+' persistent='+persistent, async(t)=>{
             const fixture=schedulerFixture(t,1);

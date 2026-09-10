@@ -9,7 +9,7 @@ export class AGProviderResponseError extends Error {
 }
 
 export class AGInitialSpinResponseError extends Error {
-    constructor(readonly reason: 'MalformedRequest' | 'error-only') {
+    constructor(readonly reason: 'error-only') {
         super('initial Spin discarded; reset session: ' + reason);
         this.name = 'AGInitialSpinResponseError';
     }
@@ -547,6 +547,7 @@ export async function captureAGRound(
         trigger = await session.callGameData(initial.event, initial.parameters);
     } catch (error) {
         if (/^spin$/i.test(initial.event) && error instanceof AGProviderResponseError
+            && error.reason === 'error-only'
             && error.event.toLowerCase() === initial.event.toLowerCase()) {
             throw new AGInitialSpinResponseError(error.reason);
         }

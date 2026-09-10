@@ -15,8 +15,8 @@ for (const payload of [{ErrorInfo:{type:'MalformedRequest'}},{error:{token:'must
                 }};
             await assert.rejects(captureAGRound(session),(error:unknown)=>{
                 assert.ok(error instanceof Error);
-                assert.equal(error instanceof AGInitialSpinResponseError,!followUp);
-                assert.equal(isDeterministicCaptureError(error),followUp);
+                assert.equal(error instanceof AGInitialSpinResponseError,!followUp && 'error' in payload);
+                assert.equal(isDeterministicCaptureError(error),followUp || 'ErrorInfo' in payload);
                 assert.ok(!error.message.includes('must-not-leak'));
                 return true;
             });
@@ -37,4 +37,15 @@ test('Wicked Spin matches official two-field request even with cached symbols',(
     const session=new RoxorCometDSession({gameId:'play-wicked-winnings-ii',name:'Wicked',backendArtifactId:'rgp-game-wicked-winnings-2'});
     Object.assign(session,{coinSize:'0.05',numberOfCoins:'1,1',activeSymbols:{stale:true}});
     assert.deepEqual(session.getSpinParams(),{coinSize:'0.05',numberOfCoins:'1,1'});
+});
+test('MalformedRequest records safe request context and stays fatal',async(t)=>{
+    const session:any=new RoxorCometDSession({gameId:'play-wicked-winnings-ii',name:'Wicked',backendArtifactId:'rgp-game-wicked-winnings-2'});
+    let calls=0;session.callGameRaw=async()=>({channel:'/service/game',data:{responseText:JSON.stringify(++calls===1?{NextActionInfo:{nextAction:'SPIN'},PlayerBalanceInfo:{balance:100}}:{ErrorInfo:{type:'MalformedRequest',privateValue:'must-not-leak'}})}});
+    const logs:string[]=[];t.mock.method(console,'error',(value:unknown)=>logs.push(String(value)));
+    await session.callGameData('Spin',{coinSize:'0.04',numberOfCoins:'1,1'});
+    await assert.rejects(session.callGameData('Spin',{coinSize:'0.04',numberOfCoins:'1,1',token:'must-not-leak'}),(e:unknown)=>isDeterministicCaptureError(e));
+    assert.equal(logs.length,1);assert.ok(!logs[0].includes('must-not-leak'));
+    const detail=JSON.parse(logs[0].slice('[AG-REJECT] '.length));
+    assert.equal(detail.previousAction,'SPIN');assert.equal(detail.previousBalance,100);
+    assert.equal(detail.coinSize,'0.04');assert.equal(detail.numberOfCoins,'1,1');assert.equal(detail.completedRequests,1);
 });

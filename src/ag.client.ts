@@ -606,6 +606,9 @@ export class RoxorCometDSession {
     private handshakeData: Record<string, any> | null = null;
     private lastGameRequest: { event: string; parameters: Record<string, any> | null } | undefined;
     private balance = Number.NaN;
+    private lastResponseAction = '';
+    private completedRequests = 0;
+    private readonly openedAt = Date.now();
     private coinSize = '0.01';
     private numberOfCoins = '1';
     private lineSum = 1;
@@ -847,8 +850,25 @@ export class RoxorCometDSession {
         } else {
             const protocolEvent = this.resolveProtocolEvent(event);
             const msg = await this.callGameRaw(protocolEvent, parameters);
-            data = parseResponseText(msg, protocolEvent);
+            try {
+                data = parseResponseText(msg, protocolEvent);
+            } catch (error) {
+                if (error instanceof AGProviderResponseError && error.reason === 'MalformedRequest') {
+                    // 仅白名单投注字段与状态；不输出会话标识或完整服务端响应。
+                    const numericParam = (key: string) => {
+                        const value = String(parameters?.[key] ?? '');
+                        return /^[0-9.,-]{1,500}$/.test(value) ? value : undefined;
+                    };
+                    console.error('[AG-REJECT] ' + JSON.stringify({gameId:this.game.gameId,event:protocolEvent,reason:error.reason,
+                        parameterKeys:Object.keys(parameters || {}).sort(),coinSize:numericParam('coinSize'),numberOfCoins:numericParam('numberOfCoins'),
+                        previousAction:this.lastResponseAction,previousBalance:Number.isFinite(this.balance)?this.balance:null,
+                        completedRequests:this.completedRequests,sessionAgeMs:Date.now()-this.openedAt}));
+                }
+                throw error;
+            }
         }
+        this.completedRequests += 1;
+        this.lastResponseAction = String(data.NextActionInfo?.nextAction || '');
         this.updateActiveSymbols(data);
         const balance = Number(data.PlayerBalanceInfo?.balance);
         if (Number.isFinite(balance) && (balance !== 0 || hasExplicitXmlBalance(data))) this.balance = balance;
