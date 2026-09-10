@@ -55,3 +55,5 @@ NEXT_TRAIN 使用官方小写 nexttrain 与空对象参数。已核对 Joyful Pa
 回合执行器原先允许空nextAction结束，入库层随后报invalid terminal action，丢失了请求上下文。现在缺失/空/纯空白动作在回合层明确抛AG integrity: missing nextAction，仅记录事件、前序动作、步骤数、响应字段名和动作类型，不输出响应字段值，不伪造SPIN、不重开局。此修正不证明上游缺失字段的原因已解决；原失败日志没有原始响应，需受控诊断取证，不能盲续拉。
 
 验证：权威完整125/125、公开完整172/172、双方typecheck通过；公开审计通过，依赖0漏洞；独立6/6针对性测试通过，无新增Critical/Important。
+
+仅取证运行可将 workflow_dispatch 的 diagnostic_only 设为 true：节点退出失败后不再启动下一次采集进程，自动合并作业始终跳过；已完成的 staging 数据保留供排查。正常运行默认 false。

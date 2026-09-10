@@ -62,14 +62,17 @@ test('workflow never contains a database URI or admin operation', () => {
 });
 
 for (const job of ['canary', 'capture']) {
-    for (const [statuses, expectedExit, expectedCalls] of [
+    for (const [statuses, expectedExit, expectedCalls, diagnostic = false] of [
+        ['1 0', 1, 1, true],
+        ['78 0', 78, 1, true],
+        ['0', 0, 1, true],
         ['78 0', 78, 1],
         ['1 78 0', 78, 2],
         ['1 0', 0, 2],
         ['1 1 0', 0, 3],
         ['1 1 1 0', 1, 3],
     ] as const) {
-        test(`${job} retry shell handles statuses ${statuses} without masking deterministic failure`, () => {
+        test(`${job} retry shell handles statuses ${statuses} diagnostic=${diagnostic} without masking deterministic failure`, () => {
             const parsed = yaml.load(fs.readFileSync(workflowPath, 'utf8')) as {
                 jobs: Record<string, { steps: Array<{ shell?: string; run?: string }> }>;
             };
@@ -79,6 +82,7 @@ for (const job of ['canary', 'capture']) {
                 ? path.resolve(execFileSync('git', ['--exec-path'], { encoding: 'utf8' }).trim(), '../../../bin/bash.exe')
                 : 'bash';
             const result = spawnSync(bash, ['--noprofile', '--norc', '-eo', 'pipefail', '-c', `
+                export DIAGNOSTIC_ONLY=${diagnostic}
                 statuses=(${statuses})
                 calls=0
                 npm() {
@@ -95,3 +99,11 @@ for (const job of ['canary', 'capture']) {
         });
     }
 }
+
+test('diagnostic dispatch disables automatic merge and defaults off', () => {
+    const parsed = yaml.load(fs.readFileSync(workflowPath, 'utf8')) as any;
+    assert.equal(parsed.on.workflow_dispatch.inputs.diagnostic_only.type, 'boolean');
+    assert.equal(parsed.on.workflow_dispatch.inputs.diagnostic_only.default, false);
+    assert.equal(parsed.env.DIAGNOSTIC_ONLY, '${{ inputs.diagnostic_only }}');
+    assert.equal(parsed.jobs.finalize.if, "github.repository == 'dune3887/ag-capture-public-runner' && !inputs.diagnostic_only");
+});

@@ -11,6 +11,11 @@ on:
         description: 与游戏严格匹配的 ag_ 数据库名
         required: true
         type: string
+      diagnostic_only:
+        description: 仅取证；失败节点不重试，禁止自动合并
+        required: false
+        type: boolean
+        default: false
       resume_campaign_id:
         description: 留空创建新 campaign；续拉时填写原 campaign ID
         required: false
@@ -24,6 +29,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  DIAGNOSTIC_ONLY: ${{ inputs.diagnostic_only }}
   TARGET_TOTAL: "300000"
   WORKER_COUNT: "20"
   CAMPAIGN_RUN_ID: ${{ inputs.resume_campaign_id || github.run_id }}
@@ -78,7 +84,7 @@ jobs:
             else
               status=$?
               # 确定性协议错误不能通过续拉已有 staging 配额变成成功。
-              if [ "${status}" -eq 78 ]; then exit "${status}"; fi
+              if [ "${DIAGNOSTIC_ONLY:-false}" = "true" ] || [ "${status}" -eq 78 ]; then exit "${status}"; fi
             fi
             echo "canary attempt ${attempt} incomplete; resuming staging collection"
             if [ "${attempt}" -lt 3 ]; then sleep $((attempt * 30)); fi
@@ -146,7 +152,7 @@ jobs:
             else
               status=$?
               # 确定性协议错误不能通过续拉已有 staging 配额变成成功。
-              if [ "${status}" -eq 78 ]; then exit "${status}"; fi
+              if [ "${DIAGNOSTIC_ONLY:-false}" = "true" ] || [ "${status}" -eq 78 ]; then exit "${status}"; fi
             fi
             echo "capture attempt ${attempt} incomplete; resuming staging collection"
             if [ "${attempt}" -lt 3 ]; then sleep $((attempt * 30)); fi
@@ -154,7 +160,7 @@ jobs:
           exit 1
 
   finalize:
-    if: github.repository == 'dune3887/ag-capture-public-runner'
+    if: github.repository == 'dune3887/ag-capture-public-runner' && !inputs.diagnostic_only
     name: 合并并验收 30 万条
     needs: [prepare, capture]
     runs-on: ubuntu-latest
