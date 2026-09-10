@@ -220,7 +220,7 @@ test('ordinary storage network failure remains retryable instead of becoming fat
     assert.equal(runFailureCLI(error.message).status, 1);
 });
 
-for (const message of ['AG integrity: missing round result', 'unsupported AG nextAction: BONUS_ENTRY', 'FreeSpin: {"type":"RuntimeError"}', 'nexttrain: {"type":"MalformedRequest"}', 'nexttrain: {"type":"RuntimeError"}']) {
+for (const message of ['AG integrity: missing round result', 'unsupported AG nextAction: BONUS_ENTRY', 'FreeSpin: {"type":"RuntimeError"}', 'nexttrain: {"type":"MalformedRequest"}', 'nexttrain: {"type":"RuntimeError"}', 'pickfreespins: {"type":"MalformedRequest"}', 'Pick: {"type":"RuntimeError"}']) {
     test(`three workers stop before storing late rounds during fatal session cleanup: ${message}`, async (t) => {
         t.mock.timers.enable({ apis: ['setTimeout'] });
         const fixture = schedulerFixture(t, 2);
@@ -392,6 +392,8 @@ for (const [message, exitCode, cleanupFails] of [
     ['unsupported AG nextAction: BONUS_ENTRY', 78, false],
     ['nexttrain: {"type":"MalformedRequest"}', 78, false],
     ['nexttrain: {"type":"RuntimeError"}', 78, false],
+    ['pickfreespins: {"type":"MalformedRequest"}', 78, false],
+    ['Pick: {"type":"RuntimeError"}', 78, false],
     ['read ETIMEDOUT', 1, false],
     ['AG integrity: corrupt result', 78, true],
 ] as const) {

@@ -31,3 +31,11 @@ npm audit --omit=dev
 NEXT_TRAIN 使用官方小写 nexttrain 与空对象参数。已核对 Joyful Panda 1.0.14、Cash Express Legend Buffalo 1.0.6、Choy Sun Doa 1.0.5、Buffalo CELL 0.0.23、Pelican Pete CELL 1.0.5、Timber Wolf CELL 1.0.19 的本地官方前端；此证据不代表所有 AG 游戏协议均已验证。完整资源未纳入仓库。
 
 回归覆盖连续两步至真正终态、仅一次初始 Spin、原 trigger/实际请求/bet/win/feature，以及 MalformedRequest 和 RuntimeError 跨线程停止、CLI 78。功能局失败不得重新 Spin 补数。完整测试 137 项通过，typecheck 通过，npm audit 为 0 漏洞。结构及 RTP 标签校验不能单独证明统计无偏。
+
+## Triple Supreme Pick 修复（2026-09-10）
+
+官方 Heart of the Sea 1.0.7 与 Grand Prosperity 1.0.2：免费四选一发送 pickfreespins，仅带字符串 pickIndex（逻辑1–4映射请求0–3）；Match3发送 Pick，仅带字符串 pickIndex（0–11，排除 Match3Result.revealedSymbols 中已揭示位置）。Match3揭示不计免费选项配额。通过 Session 的限定协议接口返回合法选项，整局执行器只发送精确请求，失败后不切换事件或索引、不新开Spin。缺失/非法/重复/耗尽的揭示索引保持完整性致命错误。其他游戏保持原协议路径。
+
+计划与验证：核对两款官方请求及UI索引；先复现12项失败，再修复并测试四选项、多步揭示、跨阶段及新一轮重置、原trigger/实际请求/完整赢分、错误传播及跨线程/CLI78；完整测试、类型检查、公开与依赖审计通过后独立审查、提交推送，再安全预检并续拉原Campaign。官方完整资源和运行态不纳入提交。RTP/结构校验不等于统计无偏证明。
+
+验证结果：权威工具完整测试116/116、公开Runner完整测试163/163，双方typecheck通过；独立审查22项协议回归均通过，无未解决Critical/Important。重复免费选择只预留一次配额；原始trigger、实际请求、完整赢分与CLI78保护保留。

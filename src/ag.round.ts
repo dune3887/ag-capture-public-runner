@@ -17,12 +17,19 @@ export interface AGPickOption {
     [key: string]: any;
 }
 
+export interface AGPickProtocol {
+    event: string;
+    kind: 'choice' | 'reveal';
+    options: AGPickOption[];
+}
+
 export interface AGSessionLike {
     callGameData(event: string, parameters: Record<string, any> | null): Promise<Record<string, any>>;
     getSpinParams(): Record<string, any>;
     getFollowUpParams?(): Record<string, any>;
     getPickParams(pickIndex: number | string): Record<string, any>;
     getPickEvent?(): string;
+    getPickProtocol?(action: string, response: Record<string, any>): AGPickProtocol | undefined;
     getSequentialPickIndex?(index: number, trigger: Record<string, any>): number;
     getFallbackBet(): number;
     getBalance?(): number;
@@ -578,7 +585,22 @@ export async function captureAGRound(
         let selectableIndexes: Array<number | string> = [];
         let chosenRequestIndex: number | string | undefined;
 
-        if (requiresIndexedPick(action)) {
+        const pickProtocol = requiresIndexedPick(action) ? session.getPickProtocol?.(action, current) : undefined;
+        if (pickProtocol) {
+            // 有官方证据的协议只发送精确请求，不协商其他事件或偷偷改变选项。
+            const pickOptions = pickProtocol.options;
+            const chosen = pickProtocol.kind === 'choice'
+                ? (optionIndex === 0 && options.chooseOption ? options.chooseOption(pickOptions) : selectFreeChoiceOption(pickOptions, options.optionHits || {}))
+                : pickOptions[0];
+            if (!chosen || !pickOptions.includes(chosen)) throw new Error('AG integrity: no selectable option in verified Pick protocol');
+            chosenRequestIndex = chosen.requestPickIndex ?? chosen.pickIndex;
+            selectableIndexes = pickOptions.map(option => option.requestPickIndex ?? option.pickIndex);
+            if (pickProtocol.kind === 'choice') {
+                if (optionIndex === 0) optionIndex = Number(chosen.pickIndex);
+                optionCount = Math.max(optionCount, pickOptions.length);
+            }
+            candidates = [{event: pickProtocol.event, params: {pickIndex: String(chosenRequestIndex)}}];
+        } else if (requiresIndexedPick(action)) {
             const responseRequestMode = String(current?.PickGameInfo?.requestMode || '');
             if (responseRequestMode === 'legacy-multiround-pick') {
                 if (activeLegacyPickMode !== responseRequestMode) {
