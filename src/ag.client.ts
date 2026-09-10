@@ -740,6 +740,8 @@ export class RoxorCometDSession {
     }
 
     getPickParams(pickIndex: number | string): Record<string, any> {
+        // Turtle Kingdom 1.0.6 官方奖池揭示只发送字符串索引，不附加投注字段。
+        if (this.game.backendArtifactId === 'rgp-game-gold-stacks-88-turtle-kingdom') return { pickIndex: String(pickIndex) };
         // Christmas Cottage 旧 Servlet 的 PickRequest 经 CometD 发送时保留表单字符串类型。
         if (this.game.backendArtifactId === 'rgp-game-christmas-cottage') {
             return { roundIndex: '0', pickIndex: String(pickIndex), autoPick: 'false' };
@@ -781,6 +783,7 @@ export class RoxorCometDSession {
     }
 
     getPickEvent(): string {
+        if (this.game.backendArtifactId === 'rgp-game-gold-stacks-88-turtle-kingdom') return 'Pick';
         if (this.game.backendArtifactId === 'rgp-game-christmas-cottage') return 'PickRequest';
         return this.protocol === 'legacy-events' ? 'PickRequest' : '';
     }
