@@ -49,6 +49,7 @@ export interface AGSessionLike {
     getPickEvent?(): string;
     getPickProtocol?(action: string, response: Record<string, any>, revealedIndexes: readonly number[]): AGPickProtocol | undefined;
     getSequentialPickIndex?(index: number, trigger: Record<string, any>): number;
+    getLegacyPickCompletionRequest?(mode: string): {event: string; parameters: Record<string, any>} | undefined;
     getFallbackBet(): number;
     getBalance?(): number;
     getLastGameRequest?(): { event: string; parameters: Record<string, any> | null } | undefined;
@@ -755,8 +756,19 @@ export async function captureAGRound(
         if (!isTerminal(action)
             && ['legacy-preloaded-pick', 'legacy-stateful-spin-pick'].includes(activeLegacyPickMode)
             && isPreloadedPickTerminal(current)) {
-            action = 'SPIN';
-            requiresSessionReset = true;
+            const completionRequest = session.getLegacyPickCompletionRequest?.(activeLegacyPickMode);
+            if (completionRequest) {
+                if (steps.length >= maxSteps) throw new Error('AG round exceeded completion step limit');
+                const completion = await callFirstSuccessful(session, [{event: completionRequest.event, params: completionRequest.parameters}]);
+                if (!isTerminal(nextActionOf(completion.data))) throw new Error('AG integrity: legacy pick completion did not terminate');
+                // -1 是官方自动结算标记，不是玩家可选择的翻牌位置。
+                steps.push({...completion, action, requiresPickIndex: false, selectableIndexes: []});
+                current = completion.data;
+                action = nextActionOf(current);
+            } else {
+                action = 'SPIN';
+                requiresSessionReset = true;
+            }
         }
         encounteredFeature = encounteredFeature || isFeatureAction(action);
     }

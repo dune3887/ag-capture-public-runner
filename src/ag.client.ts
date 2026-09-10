@@ -822,6 +822,14 @@ export class RoxorCometDSession {
         return this.protocol === 'legacy-events' ? 'PickRequest' : '';
     }
 
+    getLegacyPickCompletionRequest(mode: string): {event: string; parameters: Record<string, any>} | undefined {
+        // Fortune Temple 3.0.5 的 stateful 转盘 COLLECT 后用 -1 请求最终结算。
+        if (this.game.backendArtifactId === 'rgp-game-fortunetemple' && mode === 'legacy-stateful-spin-pick') {
+            return {event: 'Pick', parameters: {pickIndex: '-1'}};
+        }
+        return undefined;
+    }
+
     getSequentialPickIndex(index: number, trigger: Record<string, any>): number {
         // Tiki Island 4.0.5 官方客户端：椰子选未点位置；鱼奖励每轮重新展示三条鱼，
         // 请求为 3 * roundIdx + clickedIndex。采集固定点每轮第一条，不能发送 0、1、2。
