@@ -609,6 +609,7 @@ export class RoxorCometDSession {
     private lastResponseAction = '';
     private completedRequests = 0;
     private readonly openedAt = Date.now();
+    private diagnosticPickIndexes: number[] = [];
     private coinSize = '0.01';
     private numberOfCoins = '1';
     private lineSum = 1;
@@ -870,12 +871,17 @@ export class RoxorCometDSession {
                     };
                     console.error('[AG-REJECT] ' + JSON.stringify({gameId:this.game.gameId,event:protocolEvent,reason:error.reason,
                         parameterKeys:Object.keys(parameters || {}).sort(),coinSize:numericParam('coinSize'),numberOfCoins:numericParam('numberOfCoins'),
+                        pickIndex:numericParam('pickIndex'),pickIndexType:typeof parameters?.pickIndex,previousRevealedIndexes:this.diagnosticPickIndexes,
                         previousAction:this.lastResponseAction,previousBalance:Number.isFinite(this.balance)?this.balance:null,
                         completedRequests:this.completedRequests,sessionAgeMs:Date.now()-this.openedAt}));
                 }
                 throw error;
             }
         }
+        // 诊断只保留有限的非负整数位置，不保存奖池响应、标识或凭据。
+        const diagnosticReveals = data.JackpotPickResultInfo?.revealedSymbols;
+        this.diagnosticPickIndexes = Array.isArray(diagnosticReveals) ? diagnosticReveals.slice(0, 32)
+            .map((row: any) => row?.pickIndex).filter((index: unknown): index is number => typeof index === 'number' && Number.isInteger(index) && index >= 0 && index <= 1000) : [];
         this.completedRequests += 1;
         this.lastResponseAction = String(data.NextActionInfo?.nextAction || '');
         this.updateActiveSymbols(data);
