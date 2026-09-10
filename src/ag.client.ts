@@ -740,6 +740,10 @@ export class RoxorCometDSession {
     }
 
     getPickParams(pickIndex: number | string): Record<string, any> {
+        // Christmas Cottage 旧 Servlet 的 PickRequest 经 CometD 发送时保留表单字符串类型。
+        if (this.game.backendArtifactId === 'rgp-game-christmas-cottage') {
+            return { roundIndex: '0', pickIndex: String(pickIndex), autoPick: 'false' };
+        }
         if (this.protocol === 'lowercase-standard') {
             return { pickIndex: String(pickIndex) };
         }
@@ -777,6 +781,7 @@ export class RoxorCometDSession {
     }
 
     getPickEvent(): string {
+        if (this.game.backendArtifactId === 'rgp-game-christmas-cottage') return 'PickRequest';
         return this.protocol === 'legacy-events' ? 'PickRequest' : '';
     }
 
@@ -845,7 +850,8 @@ export class RoxorCometDSession {
             data = await this.callLegacySpin(parameters);
         } else if (this.protocol === 'lowercase-standard' && event.toLowerCase() === 'spin') {
             data = await this.callLowercaseSpin(parameters);
-        } else if (this.protocol === 'lowercase-standard') {
+        } else if (this.protocol === 'lowercase-standard'
+            && !(this.game.backendArtifactId === 'rgp-game-christmas-cottage' && event === 'PickRequest')) {
             data = await this.callLowercaseFollowUp(event, parameters);
         } else {
             const protocolEvent = this.resolveProtocolEvent(event);
