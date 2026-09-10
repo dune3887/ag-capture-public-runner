@@ -36,6 +36,8 @@ export interface AGPickProtocol {
     event: string;
     kind: 'choice' | 'reveal';
     revealedIndexes?: number[];
+    // 奖池位置由服务端映射到玩家点击，不把采集盘面位置变成回放硬约束。
+    remapReveal?: boolean;
     options: AGPickOption[];
 }
 
@@ -618,7 +620,7 @@ export async function captureAGRound(
                 : pickOptions[0];
             if (!chosen || !pickOptions.includes(chosen)) throw new Error('AG integrity: no selectable option in verified Pick protocol');
             chosenRequestIndex = chosen.requestPickIndex ?? chosen.pickIndex;
-            selectableIndexes = pickOptions.map(option => option.requestPickIndex ?? option.pickIndex);
+            selectableIndexes = pickProtocol.remapReveal ? [] : pickOptions.map(option => option.requestPickIndex ?? option.pickIndex);
             if (pickProtocol.kind === 'choice') {
                 if (optionIndex === 0) optionIndex = Number(chosen.pickIndex);
                 optionCount = Math.max(optionCount, pickOptions.length);

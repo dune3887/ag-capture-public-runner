@@ -757,6 +757,27 @@ export class RoxorCometDSession {
     }
 
     getPickProtocol(action: string, response: Record<string, any>, revealedIndexes: readonly number[] = []): AGPickProtocol | undefined {
+        // 官方 Turtle 1.0.6 / Dancing Foo 1.0.12：每盘 12 格，RESET 清盘，RESUME 只恢复当前揭示集合。
+        // 同一大局可以多次进入奖池，不能沿用整局递增索引或上一盘本地历史。
+        if (action === 'PICK' && ['rgp-game-gold-stacks-88-turtle-kingdom',
+            'rgp-game-gold-stacks-88-dancing-foo'].includes(this.game.backendArtifactId || '')) {
+            const info = response.JackpotPickResultInfo;
+            const revealed = info === undefined ? [] : info?.revealedSymbols;
+            if (!Array.isArray(revealed)) throw new Error('AG integrity: invalid jackpot revealedSymbols');
+            const picked = new Set<number>();
+            for (const symbol of revealed) {
+                const raw = symbol?.pickIndex;
+                const index = Number(raw);
+                if ((typeof raw !== 'number' && typeof raw !== 'string') || String(raw).trim() === ''
+                    || !Number.isInteger(index) || index < 0 || index >= 12 || picked.has(index)) {
+                    throw new Error('AG integrity: invalid jackpot revealed pick index');
+                }
+                picked.add(index);
+            }
+            return {event: 'Pick', kind: 'reveal', remapReveal: true, revealedIndexes: [...picked],
+                options: Array.from({length: 12}, (_, index) => ({pickIndex: index + 1, requestPickIndex: index}))
+                    .filter(option => !picked.has(option.requestPickIndex))};
+        }
         // 官方 Heart of the Sea 1.0.7 / Grand Prosperity 1.0.2：
         // 免费次数四选一用 pickfreespins；Match3 的 Pick 揭示 12 格，二者不能共享索引计数器。
         if (!['rgp-game-triple-supreme-xtreme-heart-of-the-sea',
