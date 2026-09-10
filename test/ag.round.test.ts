@@ -52,6 +52,43 @@ test('captureAGRound does not downgrade a follow-up RuntimeError', async () => {
     ));
 });
 
+test('captureAGRound 在同一功能局内以官方别名恢复首个后续 RuntimeError', async () => {
+    const calls: string[] = [];
+    const session = {
+        getSpinParams: () => ({ coinSize: '1', numberOfCoins: '2' }),
+        getFollowUpParams: () => ({ coinSize: '1', numberOfCoins: '2' }),
+        getPickParams: (pickIndex: number | string) => ({ pickIndex: String(pickIndex) }),
+        getFallbackBet: () => 2,
+        callGameData: async (event: string) => {
+            calls.push(event);
+            if (event === 'Spin') {
+                return {
+                    PlayerBalanceInfo: { wager: 2, balance: 98, resultAmount: 0 },
+                    NextActionInfo: { nextAction: 'FREE_SPIN' },
+                };
+            }
+            if (event === 'freeSpin') throw new Error('freeSpin: {"type":"RuntimeError"}');
+            if (event === 'freespin') {
+                return {
+                    PlayerBalanceInfo: { balance: 102.5, resultAmount: 4.5 },
+                    NextActionInfo: { nextAction: 'SPIN' },
+                };
+            }
+            throw new Error(`unexpected event ${event}`);
+        },
+    };
+
+    const round = await captureAGRound(session);
+
+    assert.deepEqual(calls, ['Spin', 'freeSpin', 'freespin']);
+    assert.equal(calls.filter((event) => event === 'Spin').length, 1);
+    assert.equal(round.isFeature, true);
+    assert.equal(round.bet, 2);
+    assert.equal(round.win, 4.5);
+    assert.deepEqual(round.data.roundEvents, ['Spin', 'freespin']);
+    assert.equal(round.data.roundTrigger.NextActionInfo.nextAction, 'FREE_SPIN');
+});
+
 test('旧式 COLLECT 同时带官方结算事件时保留完整局和真实余额', async () => {
     const session = {
         getSpinParams: () => ({}), getPickParams: (pickIndex: number|string) => ({pickIndex}),
