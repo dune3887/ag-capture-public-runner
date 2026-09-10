@@ -735,7 +735,7 @@ export class RoxorCometDSession {
         return buildPickParams(this.coinSize, this.numberOfCoins, pickIndex);
     }
 
-    getPickProtocol(action: string, response: Record<string, any>): AGPickProtocol | undefined {
+    getPickProtocol(action: string, response: Record<string, any>, revealedIndexes: readonly number[] = []): AGPickProtocol | undefined {
         // 官方 Heart of the Sea 1.0.7 / Grand Prosperity 1.0.2：
         // 免费次数四选一用 pickfreespins；Match3 的 Pick 揭示 12 格，二者不能共享索引计数器。
         if (!['rgp-game-triple-supreme-xtreme-heart-of-the-sea',
@@ -745,9 +745,10 @@ export class RoxorCometDSession {
         }
         if (action !== 'PICK') return undefined;
         const revealed = response.Match3Result?.revealedSymbols;
-        if (!Array.isArray(revealed)) throw new Error('AG integrity: Match3 missing revealedSymbols');
+        // 普通入口不带 revealedSymbols，客户端在每次成功揭示后维护本地已选格子。
+        if (revealed !== undefined && !Array.isArray(revealed)) throw new Error('AG integrity: invalid Match3 revealedSymbols');
         const picked = new Set<number>();
-        for (const symbol of revealed) {
+        for (const symbol of revealed || []) {
             const raw = symbol?.pickIndex;
             const index = Number(raw);
             if ((typeof raw !== 'number' && typeof raw !== 'string') || String(raw).trim() === ''
@@ -756,7 +757,8 @@ export class RoxorCometDSession {
             }
             picked.add(index);
         }
-        return {event: 'Pick', kind: 'reveal', options: Array.from({length: 12}, (_, index) => ({pickIndex: index + 1, requestPickIndex: index}))
+        for (const index of revealedIndexes) picked.add(index);
+        return {event: 'Pick', kind: 'reveal', revealedIndexes: [...picked], options: Array.from({length: 12}, (_, index) => ({pickIndex: index + 1, requestPickIndex: index}))
             .filter(option => !picked.has(option.requestPickIndex))};
     }
 

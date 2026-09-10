@@ -34,8 +34,14 @@ NEXT_TRAIN 使用官方小写 nexttrain 与空对象参数。已核对 Joyful Pa
 
 ## Triple Supreme Pick 修复（2026-09-10）
 
-官方 Heart of the Sea 1.0.7 与 Grand Prosperity 1.0.2：免费四选一发送 pickfreespins，仅带字符串 pickIndex（逻辑1–4映射请求0–3）；Match3发送 Pick，仅带字符串 pickIndex（0–11，排除 Match3Result.revealedSymbols 中已揭示位置）。Match3揭示不计免费选项配额。通过 Session 的限定协议接口返回合法选项，整局执行器只发送精确请求，失败后不切换事件或索引、不新开Spin。缺失/非法/重复/耗尽的揭示索引保持完整性致命错误。其他游戏保持原协议路径。
+官方 Heart of the Sea 1.0.7 与 Grand Prosperity 1.0.2：免费四选一发送 pickfreespins，仅带字符串 pickIndex（逻辑1–4映射请求0–3）；Match3发送 Pick，仅带字符串 pickIndex（0–11，排除 Match3Result.revealedSymbols 中已揭示位置）。Match3揭示不计免费选项配额。通过 Session 的限定协议接口返回合法选项，整局执行器只发送精确请求，失败后不切换事件或索引、不新开Spin。非法/重复/耗尽的揭示索引保持完整性致命错误。其他游戏保持原协议路径。
 
 计划与验证：核对两款官方请求及UI索引；先复现12项失败，再修复并测试四选项、多步揭示、跨阶段及新一轮重置、原trigger/实际请求/完整赢分、错误传播及跨线程/CLI78；完整测试、类型检查、公开与依赖审计通过后独立审查、提交推送，再安全预检并续拉原Campaign。官方完整资源和运行态不纳入提交。RTP/结构校验不等于统计无偏证明。
 
 验证结果：权威工具完整测试116/116、公开Runner完整测试163/163，双方typecheck通过；独立审查22项协议回归均通过，无未解决Critical/Important。重复免费选择只预留一次配额；原始trigger、实际请求、完整赢分与CLI78保护保留。
+
+### Match3 普通入口补充
+
+官方普通入口不传历史数组，握手恢复才传 revealedSymbols；正常揭示将 lastRevealedSymbol 对应位置保存于本地 revealedPicks。采集器在当前连续 PICK 阶段合并服务器历史与实际成功请求位置，字段省略也不重复点击；离开 PICK 后重新进入为新板。字段存在但为 null/非数组，或索引非法/重复/耗尽，仍保持致命。回归覆盖全程省略、先有后无、跨板重置、12格耗尽及失败不继续。
+
+本轮完整测试：权威119/119、公开166/166；双方typecheck通过，public-audit通过，npm audit为0漏洞；独立复审25/25通过，无阻塞问题。

@@ -20,6 +20,7 @@ export interface AGPickOption {
 export interface AGPickProtocol {
     event: string;
     kind: 'choice' | 'reveal';
+    revealedIndexes?: number[];
     options: AGPickOption[];
 }
 
@@ -29,7 +30,7 @@ export interface AGSessionLike {
     getFollowUpParams?(): Record<string, any>;
     getPickParams(pickIndex: number | string): Record<string, any>;
     getPickEvent?(): string;
-    getPickProtocol?(action: string, response: Record<string, any>): AGPickProtocol | undefined;
+    getPickProtocol?(action: string, response: Record<string, any>, revealedIndexes: readonly number[]): AGPickProtocol | undefined;
     getSequentialPickIndex?(index: number, trigger: Record<string, any>): number;
     getFallbackBet(): number;
     getBalance?(): number;
@@ -557,6 +558,7 @@ export async function captureAGRound(
     let availablePickOptions: AGPickOption[] = [];
     let availablePickOptionsSource: 'explicit' | 'raw' | null = null;
     let sequentialPickIndex = 0;
+    let verifiedRevealedIndexes: number[] = [];
     let activeLegacyPickMode = '';
     let requiresSessionReset = false;
     let guard = 0;
@@ -585,7 +587,9 @@ export async function captureAGRound(
         let selectableIndexes: Array<number | string> = [];
         let chosenRequestIndex: number | string | undefined;
 
-        const pickProtocol = requiresIndexedPick(action) ? session.getPickProtocol?.(action, current) : undefined;
+        // 普通 Match3 响应可省略历史；仅当前连续揭示阶段保留已成功请求的位置。
+        if (action !== 'PICK') verifiedRevealedIndexes = [];
+        const pickProtocol = requiresIndexedPick(action) ? session.getPickProtocol?.(action, current, verifiedRevealedIndexes) : undefined;
         if (pickProtocol) {
             // 有官方证据的协议只发送精确请求，不协商其他事件或偷偷改变选项。
             const pickOptions = pickProtocol.options;
@@ -709,6 +713,9 @@ export async function captureAGRound(
         if (chosenRequestIndex !== undefined && String(completed.parameters?.pickIndex) !== String(chosenRequestIndex)) {
             // 协议降级不能偷偷把选项 2 改成选项 1，然后仍按选项 2 计数。
             throw new Error('AG integrity: selected option changed during protocol negotiation');
+        }
+        if (pickProtocol?.kind === 'reveal') {
+            verifiedRevealedIndexes = [...(pickProtocol.revealedIndexes || []), Number(chosenRequestIndex)];
         }
         negotiatedEvents.set(actionKey, event);
         // 保存实际成功的请求，而不是仅记录推测的事件名；后续多阶段选择也保留自己的请求 ID。
