@@ -25,3 +25,9 @@ npm test
 npm run public-audit
 npm audit --omit=dev
 ```
+
+## NEXT_TRAIN 协议修复（2026-09-10）
+
+NEXT_TRAIN 使用官方小写 nexttrain 与空对象参数。已核对 Joyful Panda 1.0.14、Cash Express Legend Buffalo 1.0.6、Choy Sun Doa 1.0.5、Buffalo CELL 0.0.23、Pelican Pete CELL 1.0.5、Timber Wolf CELL 1.0.19 的本地官方前端；此证据不代表所有 AG 游戏协议均已验证。完整资源未纳入仓库。
+
+回归覆盖连续两步至真正终态、仅一次初始 Spin、原 trigger/实际请求/bet/win/feature，以及 MalformedRequest 和 RuntimeError 跨线程停止、CLI 78。功能局失败不得重新 Spin 补数。完整测试 137 项通过，typecheck 通过，npm audit 为 0 漏洞。结构及 RTP 标签校验不能单独证明统计无偏。

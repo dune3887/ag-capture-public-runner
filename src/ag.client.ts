@@ -777,7 +777,8 @@ export class RoxorCometDSession {
         if (this.protocol === 'legacy-events' && event === 'RoundPickEvent') {
             return null;
         }
-        if (event === 'BonusSpin') {
+        // 已核对的 Cash Express Legend / CELL 官方客户端：nexttrain 不带投注参数。
+        if (event === 'nexttrain' || event === 'BonusSpin') {
             return {};
         }
         if (event.toLowerCase() === 'spin') {

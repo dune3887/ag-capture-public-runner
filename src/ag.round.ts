@@ -116,7 +116,7 @@ function resolveFollowUpEvent(action: string): string {
         CASH_COLLECT: 'cashCollect',
         CLOWN_MULTIPLIER_SPIN: 'clownMultiplierSpin',
         BONUS_BOOST_SPIN: 'bonusBoostSpin',
-        NEXT_TRAIN: 'nextTrain',
+        NEXT_TRAIN: 'nexttrain',
         GOLDEN_FRENZY_SPIN: 'goldenFrenzySpin',
         BONUS_SPIN: 'bonusSpin',
         BONUS: 'BonusSpin',
