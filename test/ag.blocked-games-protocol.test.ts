@@ -113,3 +113,35 @@ test('Lucky88：DICE_SPIN 映射为小写 dicespin 且载荷为空（官方前�
     assert.deepEqual(seen[2].params, {}, 'dicespin 必须为空参数（官方 requestResponse("dicespin","{}")）');
     
 });
+
+test('Secrets of the Phoenix Hold & Gold：HOLD_AND_GOLD_SPIN 映射为官方驼峰 HoldAndGoldSpin（AG-REJECT 实证小写被拒）', async () => {
+    const real = sessionOf('play-secrets-of-the-phoenix-hold-and-gold', 'Secrets of the Phoenix Hold & Gold', 'rgp-game-secrets-of-the-phoenix-hold-and-gold');
+    const seen: Array<{ event: string; params: Record<string, any> | null }> = [];
+    const session = {
+        getSpinParams: () => real.getSpinParams(),
+        getPickParams: (index: number | string) => real.getPickParams(index),
+        getFallbackBet: () => 0.01,
+        getInitialRoundRequest: () => ({ event: 'wager', parameters: { coinSize: '0.1', numberOfCoins: '1' } }),
+        getActionParams: real.getActionParams.bind(real),
+        isRoundTerminalAction: (action: string) => String(action).toUpperCase() === 'WAGER',
+        callGameData: async (event: string, params: Record<string, any> | null) => {
+            seen.push({ event, params });
+            if (event === 'wager') {
+                return { PlayerBalanceInfo: { wager: 0.1 }, NextActionInfo: { nextAction: 'SPIN' } };
+            }
+            if (event === 'Spin') {
+                return { PlayerBalanceInfo: { resultAmount: 0.2, balance: 100 }, NextActionInfo: { nextAction: 'HOLD_AND_GOLD_SPIN' } };
+            }
+            if (event === 'HoldAndGoldSpin') {
+                return { PlayerBalanceInfo: { resultAmount: 0.1, balance: 100 }, NextActionInfo: { nextAction: 'WAGER' } };
+            }
+            throw new Error('unexpected event ' + event);
+        },
+    };
+
+    await captureAGRound(session as never);
+
+    assert.deepEqual(seen.map(e => e.event), ['wager', 'Spin', 'HoldAndGoldSpin']);
+    const hngParams = (seen[2].params || {}) as Record<string, any>;
+    assert.ok('coinSize' in hngParams && 'numberOfCoins' in hngParams, 'HoldAndGoldSpin 与官方一致须携带投注字段');
+});

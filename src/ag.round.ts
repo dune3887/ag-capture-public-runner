@@ -216,7 +216,10 @@ function resolveFollowUpEvent(action: string): string {
         DICE_SPIN: 'dicespin',
         FEATURE: 'feature',
         HAMMER_SPIN: 'hammerSpin',
-        HOLD_AND_GOLD_SPIN: 'holdAndGoldSpin',
+        // 已核对的 Secrets of the Phoenix Hold & Gold 2.0.1 官方前端：HNG 特性入口的线报事件为
+        // 驼峰 HoldAndGoldSpin（Rx 枚举 t["HNG - TRIGGER_HNG_SPIN_QUEUE"]="HoldAndGoldSpin"）。
+        // 旧值小写 holdAndGoldSpin 被 provider 判 MalformedRequest（AG-REJECT 2026-09-11T12:01:20Z 实证）。
+        HOLD_AND_GOLD_SPIN: 'HoldAndGoldSpin',
         RIBBON_WHEEL_SPIN: 'RibbonWheelSpin',
         WHEEL_SPIN: 'wheelSpin',
         // 官方 Wild Leprecoins Double Luck 客户端的两个自动转盘事件（均为小写）。
