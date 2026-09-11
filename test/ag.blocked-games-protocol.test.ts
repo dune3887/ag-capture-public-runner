@@ -145,3 +145,52 @@ test('Secrets of the Phoenix Hold & Gold：HOLD_AND_GOLD_SPIN 映射为官方驼
     const hngParams = (seen[2].params || {}) as Record<string, any>;
     assert.ok('coinSize' in hngParams && 'numberOfCoins' in hngParams, 'HoldAndGoldSpin 与官方一致须携带投注字段');
 });
+
+test('Wonders of The Deep：PICK 状态走 boardPickEvent{row,column} 行优先逐格（官方 3.0.20）', async () => {
+    const real = sessionOf('play-wonders-of-the-deep', 'Wonders of The Deep', 'rgp-game-sunken-treasure');
+    const seen: Array<{ event: string; params: Record<string, any> | null }> = [];
+    let picks = 0;
+    const session = {
+        getSpinParams: () => real.getSpinParams(),
+        getPickParams: (index: number | string) => real.getPickParams(index),
+        getPickProtocol: real.getPickProtocol.bind(real),
+        getFallbackBet: () => 0.01,
+        getInitialRoundRequest: () => ({ event: 'wager', parameters: { coinSize: '0.01', numberOfCoins: '1' } }),
+        getActionParams: real.getActionParams.bind(real),
+        isRoundTerminalAction: (action: string) => String(action).toUpperCase() === 'WAGER',
+        callGameData: async (event: string, params: Record<string, any> | null) => {
+            seen.push({ event, params });
+            if (event === 'wager') {
+                return { PlayerBalanceInfo: { wager: 0.01 }, NextActionInfo: { nextAction: 'SPIN' } };
+            }
+            if (event === 'Spin') {
+                return { PlayerBalanceInfo: { resultAmount: 0.2, balance: 100 }, NextActionInfo: { nextAction: 'PICK' },
+                    PickGameInfo: { requestMode: 'legacy-stateful-spin-pick', pickOptions: [] } };
+            }
+            if (event === 'boardPickEvent') {
+                picks += 1;
+                if (picks < 3) {
+                    return { PlayerBalanceInfo: { resultAmount: 0.1, balance: 100 }, NextActionInfo: { nextAction: 'PICK' } };
+                }
+                return { PlayerBalanceInfo: { resultAmount: 0.3, balance: 100 }, NextActionInfo: { nextAction: 'WAGER' } };
+            }
+            throw new Error('unexpected event ' + event);
+        },
+    };
+
+    await captureAGRound(session as never);
+
+    assert.deepEqual(seen.map(e => e.event), ['wager', 'Spin', 'boardPickEvent', 'boardPickEvent', 'boardPickEvent']);
+    const pickParams = seen.filter(e => e.event === 'boardPickEvent').map(e => e.params);
+    assert.deepEqual(pickParams[0], { row: '0', column: '0' });
+    assert.deepEqual(pickParams[1], { row: '1', column: '0' });
+    assert.deepEqual(pickParams[2], { row: '2', column: '0' });
+    for (const p of pickParams) {
+        assert.equal('pickIndex' in (p as Record<string, any>), false, 'boardPickEvent 不得携带 pickIndex');
+    }
+});
+
+test('Wonders 特判不影响其他游戏：More Chilli 的 PICK 无 boardPickEvent 协议（无回归）', () => {
+    const other = sessionOf('play-more-chilli', 'More Chilli', '');
+    assert.equal(other.getPickProtocol?.('PICK', {}, []), undefined);
+});

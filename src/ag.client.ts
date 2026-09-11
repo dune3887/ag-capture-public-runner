@@ -772,6 +772,25 @@ export class RoxorCometDSession {
     }
 
     getPickProtocol(action: string, response: Record<string, any>, revealedIndexes: readonly number[] = []): AGPickProtocol | undefined {
+        // 已核对的 Wonders of The Deep 3.0.20 官方前端（js-slot bundle）：Pick 奖励的线报事件是
+        // boardPickEvent，参数为 {row: String(reelIndex), column: String(lineIndex)}，
+        // row=reelIndex 0..4（5 卷轴）、column=lineIndex 0..2（每卷 3 行）。
+        // 官方测试脚本 skipPickBonus 以 pick(e%5, Math.floor(e/5)) 行优先逐格点选 15 格，
+        // 直至 PickResultEvent 类型为 PLAY（本实现按 nextAction 离开 PICK 收敛）。
+        // 通用 Pick{pickIndex} 与官方协议不符，曾被 provider 判 MalformedRequest（canary:2 exit 78 实证）。
+        if (this.game.backendArtifactId === 'rgp-game-sunken-treasure'
+            && String(action).trim().toUpperCase() === 'PICK') {
+            return {
+                event: 'boardPickEvent',
+                kind: 'reveal',
+                revealedIndexes: [...revealedIndexes],
+                options: Array.from({length: 15}, (_, k) => ({
+                    pickIndex: k + 1,
+                    requestPickIndex: k,
+                    requestParams: {row: String(k % 5), column: String(Math.floor(k / 5))},
+                })).filter(option => !revealedIndexes.includes(Number(option.requestPickIndex))),
+            };
+        }
         // Lunar Festival 1.0.24 用 id 区分五选一免费玩法和 12 格奖池，响应可能保留旧奖池字段。
         const lunar = this.game.backendArtifactId === 'rgp-game-gold-stacks-88-lunar-festival';
         // Royal Monkey 1.0.3：免费选择协议 ID 为 1..3（UI 映射 1、3、2）。

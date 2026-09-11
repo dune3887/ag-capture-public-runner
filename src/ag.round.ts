@@ -701,6 +701,9 @@ export async function captureAGRound(
             : eventCandidates.map((event) => ({ event, params: getFollowUpParams(session, action, event) }));
         let selectableIndexes: Array<number | string> = [];
         let chosenRequestIndex: number | string | undefined;
+        // 官方协议的选项可能要求非 pickIndex 参数（如 Wonders 的 boardPickEvent{row,column}），
+        // 由 getPickProtocol 的选项自带 requestParams；此时不得套用 pickIndex 完整性校验。
+        let chosenRequestParams: Record<string, any> | undefined;
 
         // 普通 Match3 响应可省略历史；仅当前连续揭示阶段保留已成功请求的位置。
         if (action !== 'PICK') verifiedRevealedIndexes = [];
@@ -718,7 +721,8 @@ export async function captureAGRound(
                 if (optionIndex === 0) optionIndex = Number(chosen.pickIndex);
                 optionCount = Math.max(optionCount, pickOptions.length);
             }
-            candidates = [{event: pickProtocol.event, params: {pickIndex: String(chosenRequestIndex)}}];
+            chosenRequestParams = chosen.requestParams as Record<string, any> | undefined;
+            candidates = [{event: pickProtocol.event, params: chosenRequestParams ?? {pickIndex: String(chosenRequestIndex)}}];
         } else if (requiresIndexedPick(action)) {
             const responseRequestMode = String(current?.PickGameInfo?.requestMode || '');
             if (responseRequestMode === 'legacy-multiround-pick') {
@@ -826,7 +830,7 @@ export async function captureAGRound(
             throw new Error(`${message} context=${protocolContext(action, current)}`);
         }
         const { event, data: next } = completed;
-        if (chosenRequestIndex !== undefined && String(completed.parameters?.pickIndex) !== String(chosenRequestIndex)) {
+        if (chosenRequestIndex !== undefined && !chosenRequestParams && String(completed.parameters?.pickIndex) !== String(chosenRequestIndex)) {
             // 协议降级不能偷偷把选项 2 改成选项 1，然后仍按选项 2 计数。
             throw new Error('AG integrity: selected option changed during protocol negotiation');
         }
