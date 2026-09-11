@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { LANE_BUDGET_MINUTES } from '../scripts/rolling-worker';
 import test from 'node:test';
 import fs from 'node:fs';
 import yaml from 'js-yaml';
@@ -127,7 +128,7 @@ test('failed canary blocks formal shards while lanes continue to next game', asy
 test('soft cutoff leaves next game pending and never steals a running shard', async () => {
     const { all, connect } = stores(); let now = 0;
     await runLane(payload, 1, 'run', { connect, now: () => now, pause, log: () => {},
-        run: async () => { now = 301 * 60_000; return 0; } });
+        run: async () => { now = (LANE_BUDGET_MINUTES + 1) * 60_000; return 0; } });
     assert.equal(all.get('B')!.get('worker:1')!.status, 'pending');
     all.get('A')!.get('worker:2')!.status = 'running';
     await runLane({ ...payload, games: [game('A')] }, 2, 'run', { connect, now: () => 0, pause, log: () => {},
@@ -179,7 +180,7 @@ test('uncertain terminal write retains running until controller resolves and B s
 test('cutoff while waiting for canary preserves all unstarted tasks', async () => {
     const { all, connect } = stores('running'); let now = 0; let calls = 0;
     await runLane(payload, 1, 'run', { connect, now: () => now,
-        pause: async () => { now = 300 * 60_000; }, log: () => {}, run: async () => { calls++; return 0; } });
+        pause: async () => { now = LANE_BUDGET_MINUTES * 60_000; }, log: () => {}, run: async () => { calls++; return 0; } });
     assert.equal(calls, 0);
     for (const id of ['A', 'B']) assert.equal(all.get(id)!.get('worker:1')!.status, 'pending');
 });

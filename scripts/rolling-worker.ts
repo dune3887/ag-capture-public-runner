@@ -6,6 +6,22 @@ import { loadGameTargets } from './game-target';
 import { AG_CAPTURE_SOURCE, AG_CAPTURE_VERSION } from '../src/ag.version';
 import { LANES, TARGET, RollingGame, RollingPayload, TaskKind, taskId, validateRollingPayload } from './rolling-contract';
 
+/**
+ * 单条通道的时间预算。
+ *
+ * 上限来自 GitHub Actions 的 job 超时（.github/workflows/capture-ag-rolling.yml 的
+ * timeout-minutes: 350），这是平台硬限制、通道侧无法绕过，所以留 10 分钟余量让通道
+ * 自行收尾，而不是在第 350 分钟被 SIGKILL。
+ *
+ * 2026-09-11 由 300 提到 340：原值会让所有通道在批次结束前约 50 分钟就不再接新游戏
+ * （实测 12 条通道空转、同时 3 款游戏无人采集），而 GitHub 侧还有 50 分钟额度没用上。
+ *
+ * 注意：该 deadline 同时是「等待 canary 完成」循环的唯一出口，不能直接删除，
+ * 否则 canary 永不完成（例如其他通道崩在 canary 阶段）时会死循环。
+ */
+export const LANE_BUDGET_MINUTES = 340;
+export const LANE_BUDGET_MS = LANE_BUDGET_MINUTES * 60_000;
+
 export type TaskStatus = 'pending' | 'running' | 'success' | 'failed' | 'blocked';
 export interface TaskRecord { _id: string; status: TaskStatus }
 export interface TaskStore {
@@ -42,7 +58,7 @@ export function childEnvironment(game: RollingGame, kind: TaskKind, index: numbe
 export async function runLane(payload: RollingPayload, lane: number, runId: string, deps: RunnerDependencies): Promise<boolean> {
     taskId('worker', lane);
     if (!/^[A-Za-z0-9._-]{1,100}$/.test(runId)) throw new Error('invalid workflow run id');
-    const deadline = deps.now() + 300 * 60_000;
+    const deadline = deps.now() + LANE_BUDGET_MS;
     let healthy = true;
     for (const game of payload.games) {
         if (deps.now() >= deadline) break;
