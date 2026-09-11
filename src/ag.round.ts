@@ -208,6 +208,12 @@ function resolveFollowUpEvent(action: string): string {
         BONUS_SPIN: 'bonusSpin',
         BONUS: 'BonusSpin',
         BONUS_ENTRY: 'bonusEntry',
+        // 已核对的 Secrets of the Queen Classic 1.0.0 官方前端：LOCK_SPIN 状态发送小写 lockspin，
+        // 与 Spin/FreeSpin 共用 {coinSize,numberOfCoins} 载荷（standard 协议默认 follow-up 参数）。
+        LOCK_SPIN: 'lockspin',
+        // 已核对的 Lucky88 2.0.1 官方前端：DICE_SPIN 状态发送小写 dicespin 且载荷为空 {}
+        //（空参数由 ag.client.ts 的 getActionParams dicespin 分支处理）。
+        DICE_SPIN: 'dicespin',
         FEATURE: 'feature',
         HAMMER_SPIN: 'hammerSpin',
         HOLD_AND_GOLD_SPIN: 'holdAndGoldSpin',

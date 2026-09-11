@@ -755,6 +755,9 @@ export class RoxorCometDSession {
     getPickParams(pickIndex: number | string): Record<string, any> {
         // Turtle Kingdom 1.0.6 官方奖池揭示只发送字符串索引，不附加投注字段。
         if (this.game.backendArtifactId === 'rgp-game-gold-stacks-88-turtle-kingdom') return { pickIndex: String(pickIndex) };
+        // Secrets of the Phoenix Elements 3.4.0 官方前端：pick/freepick 只带 pickIndex（字符串），
+        // 带投注字段会被上游判 MalformedRequest（与 getActionParams 中该 artifact 的裸发特判配套）。
+        if (this.game.backendArtifactId === 'rgp-game-phoenix-mega-match') return { pickIndex: String(pickIndex) };
         // Christmas Cottage 旧 Servlet 的 PickRequest 经 CometD 发送时保留表单字符串类型。
         if (this.game.backendArtifactId === 'rgp-game-christmas-cottage') {
             return { roundIndex: '0', pickIndex: String(pickIndex), autoPick: 'false' };
@@ -878,13 +881,26 @@ export class RoxorCometDSession {
     }
 
     getActionParams(_action: string, event: string): Record<string, any> | null {
-        // 已核对的 Tiki Totems Megaways 官方前端 2.0.15：artifact 级事实优先于下列协议分支——
-        // Cascade / FreeCascade / FreeSpin 一律只带 autoplay（小写），不带任何投注字段；
-        // 只有 Spin 带 coinSize/numberOfCoins（官方 Spin 另带 autoplay，我们只发投注两字段，实测可用，本次不动）。
-        // 带上投注字段会被上游判 MalformedRequest。
-        if (this.game.backendArtifactId === 'rgp-game-tiki-totem-megaways'
+        // 已核对的官方前端：Tiki Totems Megaways 2.0.15 与 Secrets of the Phoenix Megaways 2.0.8
+        // 的 sendWebRequest 完全同构——Cascade / FreeCascade / FreeSpin 一律只带 autoplay（小写），
+        // 不带任何投注字段；只有 Spin 带 coinSize/numberOfCoins。带上投注字段会被上游判 MalformedRequest。
+        // 采集器内部同一事件存在多种拼写（freeSpin / freespin / FreeSpins / freespincascade 等），
+        // 故统一按小写归一化比较，避免因拼写差异漏判。
+        if ((this.game.backendArtifactId === 'rgp-game-tiki-totem-megaways'
+            || this.game.backendArtifactId === 'rgp-game-secrets-of-the-phoenix-megaways')
             && MEGAWAYS_AUTOPLAY_ONLY_EVENTS.has(String(event || '').trim().toLowerCase())) {
             return { autoplay: 'false' };
+        }
+        // 已核对的 Secrets of the Phoenix Elements 3.4.0 官方前端（js-slot，libs/bundle.js）：
+        // 只有 spin 携带 coinSize/numberOfCoins；cascade/feature/freecascade/freefeature/freespin 一律裸发；
+        // pick/freepick 只带 pickIndex（见 getPickParams 特判）。free 系与 pick 家族带投注字段会被拒。
+        if (this.game.backendArtifactId === 'rgp-game-phoenix-mega-match'
+            && String(event || '').trim().toLowerCase() !== 'spin') {
+            return {};
+        }
+        // 已核对的 Lucky88 2.0.1 官方前端：DICE_SPIN 状态发送小写 dicespin 且载荷为空 {}。
+        if (String(event || '').trim().toLowerCase() === 'dicespin') {
+            return {};
         }
         if (this.protocol === 'wager-first' || this.protocol === 'instant') {
             return {};
