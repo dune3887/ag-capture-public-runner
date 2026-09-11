@@ -46,6 +46,10 @@ test('MalformedRequest records safe request context and stays fatal',async(t)=>{
     await assert.rejects(session.callGameData('Spin',{coinSize:'0.04',numberOfCoins:'1,1',token:'must-not-leak'}),(e:unknown)=>isDeterministicCaptureError(e));
     assert.equal(logs.length,1);assert.ok(!logs[0].includes('must-not-leak'));
     const detail=JSON.parse(logs[0].slice('[AG-REJECT] '.length));
+    assert.equal(detail.protocol,'standard');
+    assert.equal(detail.requestTrail.length,1);
+    assert.equal(detail.requestTrail[0].event,'Spin');
+    assert.equal(detail.requestTrail[0].nextAction,'SPIN');
     assert.equal(detail.previousAction,'SPIN');assert.equal(detail.previousBalance,100);
     assert.equal(detail.coinSize,'0.04');assert.equal(detail.numberOfCoins,'1,1');assert.equal(detail.completedRequests,1);
 });

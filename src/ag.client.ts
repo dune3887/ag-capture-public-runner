@@ -613,6 +613,7 @@ export class RoxorCometDSession {
     private coinSize = '0.01';
     private numberOfCoins = '1';
     private lineSum = 1;
+    private diagnosticRequestTrail: Array<{event: string; nextAction: string; responseKeys: string[]}> = [];
     private protocol: 'standard' | 'lowercase-standard' | 'legacy-events' | 'wager-first' | 'instant' | 'genesis' = 'standard';
     private activeSymbols: Record<string, any> | string | null = null;
 
@@ -855,6 +856,16 @@ export class RoxorCometDSession {
         return { event: 'Spin', parameters: this.getSpinParams() };
     }
 
+    // Blaze 1.2.1 官方 Tx：这些已扣注后的请求均使用固定事件名和空参数。
+    getExactFollowUpRequest(action: string): {event: string; parameters: Record<string, any>} | undefined {
+        if (this.game.gameId !== 'play-secrets-of-the-phoenix-blaze') return undefined;
+        const events: Record<string, string> = {
+            SPIN: 'Spin', FREE_SPIN: 'FreeSpin', CASCADE_SPIN: 'Cascade', FREE_CASCADE: 'FreeCascade',
+        };
+        const event = events[String(action).trim().toUpperCase()];
+        return event ? {event, parameters: {}} : undefined;
+    }
+
     getActionParams(_action: string, event: string): Record<string, any> | null {
         if (this.protocol === 'wager-first' || this.protocol === 'instant') {
             return {};
@@ -910,7 +921,7 @@ export class RoxorCometDSession {
                         const value = String(parameters?.[key] ?? '');
                         return /^[0-9.,-]{1,500}$/.test(value) ? value : undefined;
                     };
-                    console.error('[AG-REJECT] ' + JSON.stringify({gameId:this.game.gameId,event:protocolEvent,reason:error.reason,
+                    console.error('[AG-REJECT] ' + JSON.stringify({gameId:this.game.gameId,event:protocolEvent,reason:error.reason,protocol:this.protocol,requestTrail:this.diagnosticRequestTrail,
                         parameterKeys:Object.keys(parameters || {}).sort(),coinSize:numericParam('coinSize'),numberOfCoins:numericParam('numberOfCoins'),
                         pickIndex:numericParam('pickIndex'),pickIndexType:typeof parameters?.pickIndex,previousRevealedIndexes:this.diagnosticPickIndexes,
                         previousAction:this.lastResponseAction,previousBalance:Number.isFinite(this.balance)?this.balance:null,
@@ -923,6 +934,8 @@ export class RoxorCometDSession {
         const diagnosticReveals = data.JackpotPickResultInfo?.revealedSymbols;
         this.diagnosticPickIndexes = Array.isArray(diagnosticReveals) ? diagnosticReveals.slice(0, 32)
             .map((row: any) => row?.pickIndex).filter((index: unknown): index is number => typeof index === 'number' && Number.isInteger(index) && index >= 0 && index <= 1000) : [];
+        this.diagnosticRequestTrail.push({event:this.lastGameRequest?.event || event,nextAction:String(data.NextActionInfo?.nextAction || ''),responseKeys:Object.keys(data).sort()});
+        if (this.diagnosticRequestTrail.length > 8) this.diagnosticRequestTrail.shift();
         this.completedRequests += 1;
         this.lastResponseAction = String(data.NextActionInfo?.nextAction || '');
         this.updateActiveSymbols(data);

@@ -62,6 +62,7 @@ export interface AGSessionLike {
     getBalance?(): number;
     getLastGameRequest?(): { event: string; parameters: Record<string, any> | null } | undefined;
     getInitialRoundRequest?(): { event: string; parameters: Record<string, any> | null };
+    getExactFollowUpRequest?(action: string): {event: string; parameters: Record<string, any>} | undefined;
     getActionParams?(action: string, event: string): Record<string, any> | null;
     isRoundTerminalAction?(action: string): boolean;
 }
@@ -616,8 +617,10 @@ export async function captureAGRound(
         if (preferredEvent) {
             eventCandidates.unshift(preferredEvent);
         }
-        let candidates: FollowUpCandidate[] = eventCandidates
-            .map((event) => ({ event, params: getFollowUpParams(session, action, event) }));
+        const exact = session.getExactFollowUpRequest?.(action);
+        let candidates: FollowUpCandidate[] = exact
+            ? [{event: exact.event, params: exact.parameters}]
+            : eventCandidates.map((event) => ({ event, params: getFollowUpParams(session, action, event) }));
         let selectableIndexes: Array<number | string> = [];
         let chosenRequestIndex: number | string | undefined;
 
