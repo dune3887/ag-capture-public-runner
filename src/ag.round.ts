@@ -69,6 +69,12 @@ export interface AGSessionLike {
 
 export interface CaptureAGRoundOptions {
     maxSteps?: number;
+    // 官方免费玩法（如 Phoenix Gold 1.0.7 的 FreeSpinsInfo 重触发与逐次级联）可让一局
+    // 合法地超过基础步数上限；进入免费玩法阶段后改用这个更高的、仍有界的上限。
+    featureMaxSteps?: number;
+    // 免费玩法阶段允许的「连续无进展」步数上限：用于把合法长局与原地打转的循环区分开，
+    // 判定依据是会推进的计数（免费转计数/累计赢奖/余额/级联结构），不靠动作名重复。
+    stallWindow?: number;
     optionHits?: Record<number, number>;
     chooseOption?: (pickOptions: AGPickOption[]) => AGPickOption | null;
 }
@@ -98,9 +104,55 @@ export function isFreeState(action: unknown): boolean {
     return normalizedAction(action).includes('FREE');
 }
 
+// 明确的免费玩法动作白名单：免费转 / 免费级联 / 免费关本身。
+// 刻意不用 isFreeState 的 includes('FREE')：PICK_FREE_SPINS 这类「含 FREE 字样的选择态」
+// 并不代表进入了免费转循环，用它放宽步数上限会让分片故障被推迟暴露。
+export function isFreeFeatureAction(action: unknown): boolean {
+    return /(^|_)(FREE_?SPIN|FREE_?CASCADE|FREE_?GAME|FREE_?FEATURE)$/.test(normalizedAction(action));
+}
+
 export function isRoundTerminal(action: unknown): boolean {
     const value = normalizedAction(action);
     return value === '' || value === 'SPIN' || value === 'BASE' || value === 'NORMAL';
+}
+
+// 免费玩法阶段的进展指纹：官方协议里 FreeSpinsInfo.freeSpinsPlayed / freeSpinsRemaining /
+// accumulativeWin 会随每次免费转推进，级联会改变 CascadeInfo 的符号变更条目数。
+// 这里只用这些「会推进的计数」判进展，既不看动作名重复，也不输出任何字段值。
+export function featureProgressKey(data: Record<string, any> | null | undefined): string | null {
+    const info = data?.FreeSpinsInfo;
+    if (!info || typeof info !== 'object') {
+        return null;
+    }
+    const numeric = (value: unknown): number | null => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+    };
+    const cascadeChanges = Array.isArray(data?.CascadeInfo?.cascadeSymbolsData?.symbolChangeDatas)
+        ? data.CascadeInfo.cascadeSymbolsData.symbolChangeDatas.length
+        : null;
+    return JSON.stringify([
+        numeric(info.freeSpinsPlayed),
+        numeric(info.freeSpinsRemaining),
+        numeric(info.accumulativeWin),
+        numeric(data?.PlayerBalanceInfo?.balance),
+        cascadeChanges,
+    ]);
+}
+
+// 长局诊断只保留动作名、事件名、字段名与计数；绝不写字段值、会话标识或凭据。
+export function longRoundDiagnostic(
+    steps: Array<{ action?: string; event?: string }>,
+    current: Record<string, any> | null | undefined,
+): string {
+    return JSON.stringify({
+        steps: steps.length,
+        actions: [...new Set(steps.map((step) => normalizedAction(step.action)))].sort(),
+        events: [...new Set(steps.map((step) => String(step.event)))].sort(),
+        freeSpinsInfo: Boolean(current?.FreeSpinsInfo),
+        cascadeInfo: Boolean(current?.CascadeInfo),
+        responseFieldNames: Object.keys(current || {}).sort(),
+    });
 }
 
 export function selectFreeChoiceOption(
@@ -598,6 +650,17 @@ export async function captureAGRound(
     let requiresSessionReset = false;
     let guard = 0;
     const maxSteps = options.maxSteps ?? 300;
+    // 官方免费玩法可以在同一局内多次重触发并按次结算级联，合法长局会超过基础步数上限；
+    // 因此基础阶段保留 300 的严格上限，一旦确认进入免费玩法阶段就切换到更高的有界上限，
+    // 并配合「连续无进展」判定，避免只用固定 300 步截断合法局，也不放任真正的死循环。
+    const featureMaxSteps = Math.max(options.featureMaxSteps ?? 1200, maxSteps);
+    // stallWindow 必须不小于基础上限：它是「远超旧上限之后」的兜底，不能变成比 300 更早的主闸门。
+    const stallWindow = Math.max(options.stallWindow ?? 400, maxSteps);
+    // 起手响应本身可能已经处于免费玩法（官方 nextAction=FREE_SPIN / FREE_CASCADE）。
+    // 必须从起手就纳入判定：后续响应若不带 FreeSpinsInfo，否则会被按基础 300 误截断合法长局。
+    let freeFeatureSeen = Boolean(trigger?.FreeSpinsInfo) || isFreeFeatureAction(nextActionOf(trigger));
+    let lastProgressKey: string | null = null;
+    let stalledSteps = 0;
     const negotiatedEvents = new Map<string, string>();
 
     const isTerminal = (value: string) => typeof session.isRoundTerminalAction === 'function'
@@ -605,8 +668,14 @@ export async function captureAGRound(
         : isRoundTerminal(value);
 
     while (!isTerminal(action)) {
-        if (guard >= maxSteps) {
-            throw new Error(`AG round exceeded ${maxSteps} follow-up steps`);
+        // callFirstSuccessful 的返回体只有 {event, parameters, data}，运行时不含 action；
+        // 本步实际请求的动作必须在更新下一动作之前先记下，否则会漏判免费玩法。
+        const executedAction = action;
+        const stepLimit = freeFeatureSeen ? featureMaxSteps : maxSteps;
+        if (guard >= stepLimit) {
+            const diagnostic = longRoundDiagnostic(steps, current);
+            console.error('[AG-LONG-ROUND] ' + diagnostic);
+            throw new Error(`AG round exceeded ${stepLimit} follow-up steps ${diagnostic}`);
         }
         guard += 1;
 
@@ -767,13 +836,31 @@ export async function captureAGRound(
             && completed.parameters?.pickIndex !== undefined && !automaticPlayerReveal, selectableIndexes });
         current = next;
         action = nextActionOf(current);
+        // 进入免费玩法阶段后改用有界长局上限，并用会推进的计数判定是否原地打转。
+        if (!freeFeatureSeen && (Boolean(current?.FreeSpinsInfo) || isFreeFeatureAction(action) || isFreeFeatureAction(executedAction))) {
+            freeFeatureSeen = true;
+        }
+        if (freeFeatureSeen) {
+            const progressKey = featureProgressKey(current);
+            if (progressKey !== null && progressKey === lastProgressKey) {
+                stalledSteps += 1;
+                if (stalledSteps >= stallWindow) {
+                    const diagnostic = longRoundDiagnostic(steps, current);
+                    console.error('[AG-LONG-ROUND] ' + diagnostic);
+                    throw new Error(`AG round exceeded ${stallWindow} follow-up steps without progress ${diagnostic}`);
+                }
+            } else {
+                stalledSteps = 0;
+                if (progressKey !== null) lastProgressKey = progressKey;
+            }
+        }
         // 官方已返回结算/结束事件时，不能再被 COLLECT 的受限兼容分支标为残局。
         if (!isTerminal(action)
             && ['legacy-preloaded-pick', 'legacy-stateful-spin-pick'].includes(activeLegacyPickMode)
             && isPreloadedPickTerminal(current)) {
             const completionRequest = session.getLegacyPickCompletionRequest?.(activeLegacyPickMode);
             if (completionRequest) {
-                if (steps.length >= maxSteps) throw new Error('AG round exceeded completion step limit');
+                if (steps.length >= stepLimit) throw new Error('AG round exceeded completion step limit');
                 const completion = await callFirstSuccessful(session, [{event: completionRequest.event, params: completionRequest.parameters}]);
                 if (!isTerminal(nextActionOf(completion.data))) throw new Error('AG integrity: legacy pick completion did not terminate');
                 // -1 是官方自动结算标记，不是玩家可选择的翻牌位置。

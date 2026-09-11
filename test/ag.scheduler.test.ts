@@ -220,6 +220,20 @@ test('ordinary storage network failure remains retryable instead of becoming fat
     assert.equal(runFailureCLI(error.message).status, 1);
 });
 
+test('长局超限中止不写半局并按确定性失败上报进程', async (t) => {
+    const fixture = schedulerFixture(t, 1);
+    Object.assign(fixture.options, { workersPerGame: 1, sessionRecycleDelayMs: 0, retryAttempts: 0 });
+    const failure = new Error('AG round exceeded 1200 follow-up steps {"steps":1200,"actions":["FREE_SPIN"],"responseFieldNames":["FreeSpinsInfo"]}');
+    t.mock.method(capture, 'captureAGRound', async () => { throw failure; });
+
+    const error = await fixture.run();
+
+    assert.ok(error, '没有可采回合时必须向上报错，不能当成本轮完成');
+    assert.equal(fixture.stored.length, 0, '长局中止不得写入暂存');
+    assert.equal(isDeterministicCaptureError(failure), true, '长局中止必须保持确定性分类');
+    assert.equal(runFailureCLI(error.message).status, 78);
+});
+
 for (const message of ['AG integrity: missing round result', 'unsupported AG nextAction: BONUS_ENTRY', 'FreeSpin: {"type":"RuntimeError"}', 'nexttrain: {"type":"MalformedRequest"}', 'nexttrain: {"type":"RuntimeError"}', 'pickfreespins: {"type":"MalformedRequest"}', 'Pick: {"type":"RuntimeError"}']) {
     test(`three workers stop before storing late rounds during fatal session cleanup: ${message}`, async (t) => {
         t.mock.timers.enable({ apis: ['setTimeout'] });
