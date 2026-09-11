@@ -6,7 +6,7 @@ import {isDeterministicCaptureError} from '../src/ag.scheduler';
 
 for (const payload of [{ErrorInfo:{type:'MalformedRequest'}},{error:{token:'must-not-leak'}}]) {
     for (const followUp of [false,true]) {
-        test(`provider error resets only initial Spin: ${Object.keys(payload)[0]} followUp=${followUp}`,async()=>{
+        test(`provider error discards error-only and blocks MalformedRequest: ${Object.keys(payload)[0]} followUp=${followUp}`,async()=>{
             let calls=0;
             const session={getSpinParams:()=>({}),getPickParams:()=>({}),getFallbackBet:()=>1,
                 callGameData:async(event:string)=>{
@@ -16,7 +16,7 @@ for (const payload of [{ErrorInfo:{type:'MalformedRequest'}},{error:{token:'must
             await assert.rejects(captureAGRound(session),(error:unknown)=>{
                 assert.ok(error instanceof Error);
                 assert.equal(error instanceof AGInitialSpinResponseError,!followUp && 'error' in payload);
-                assert.equal(isDeterministicCaptureError(error),followUp || 'ErrorInfo' in payload);
+                assert.equal(isDeterministicCaptureError(error),'ErrorInfo' in payload);
                 assert.ok(!error.message.includes('must-not-leak'));
                 return true;
             });

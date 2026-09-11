@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { validateReplaySequence } from '../src/ag.mongo';
 import { parseResponseText } from '../src/ag.client';
 import {
-    AGInitialSpinRuntimeError,
+    AGInitialSpinRuntimeError, AGDiscardedRoundError, AGProviderResponseError,
     captureAGRound,
     isFreeState,
     isPickState,
@@ -1194,3 +1194,27 @@ test('captureAGRound remembers remaining XML pick options when later responses o
     assert.equal(round.optionIndex, 1);
     assert.equal(round.optionCount, 3);
 });
+
+for (const reason of ['error-only', 'MalformedRequest'] as const) {
+    test('功能局供应方拒绝只对 error-only 丢弃整局: ' + reason, async () => {
+        const calls: string[] = [];
+        const session = {
+            getSpinParams: () => ({coinSize: '1', numberOfCoins: '2'}),
+            getFollowUpParams: () => ({}),
+            getPickParams: () => ({}),
+            getFallbackBet: () => 2,
+            callGameData: async (event: string) => {
+                calls.push(event);
+                if (calls.length === 1 && event === 'Spin') return {
+                    PlayerBalanceInfo: {wager: 2, balance: 98, resultAmount: 0},
+                    NextActionInfo: {nextAction: 'FREE_SPIN'},
+                };
+                throw new AGProviderResponseError(event, reason);
+            },
+        };
+        await assert.rejects(captureAGRound(session), (error: unknown) =>
+            reason === 'error-only' ? error instanceof AGDiscardedRoundError
+                : error instanceof Error && !(error instanceof AGDiscardedRoundError) && /MalformedRequest/.test(error.message));
+        if (reason === 'error-only') assert.equal(calls.length, 2, '拒绝后不能在原会话尝试别名或重发功能请求');
+    });
+}

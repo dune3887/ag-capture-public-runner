@@ -1,3 +1,4 @@
+import { AGProviderResponseError } from '../src/ag.round';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -453,4 +454,13 @@ test('parseResponseText reads legacy DisplayWinEvent gross win', () => {
     assert.equal(data.GameSlotResultInfo.grossWin, 3.5);
     assert.equal(data.PlayerBalanceInfo.balance, 2001);
     assert.equal(data.NextActionInfo.nextAction, 'SPIN');
+});
+
+test('小写协议保留 error-only 类型且不重发功能请求', async () => {
+    const session = new RoxorCometDSession({gameId:'test', name:'test'}) as any;
+    let calls = 0;
+    session.callGameRaw = async () => { calls++; return {data:{responseText:'{"error":"provider rejected"}'}}; };
+    await assert.rejects(session.callLowercaseFollowUp('FreeSpin', {}), (error: unknown) =>
+        error instanceof AGProviderResponseError && error.reason === 'error-only');
+    assert.equal(calls, 1);
 });

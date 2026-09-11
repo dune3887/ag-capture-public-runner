@@ -946,6 +946,8 @@ export class RoxorCometDSession {
                 this.updateActiveSymbols(data);
                 return data;
             } catch (error) {
+                // 保留精确拒绝类型，让上层丢弃整局并重建会话，不能在原会话重发。
+                if (error instanceof AGProviderResponseError && error.reason === 'error-only') throw error;
                 const message = error instanceof Error ? error.message : String(error);
                 errors.push(`${candidate.event}: ${message}`);
                 if (index === candidates.length - 1 || !/MalformedRequest|RuntimeError/i.test(message)) {

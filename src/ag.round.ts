@@ -8,6 +8,14 @@ export class AGProviderResponseError extends Error {
     }
 }
 
+// 供应方只返回 error 时，整局作废；由调度器关闭会话后限次重建，禁止重放功能请求。
+export class AGDiscardedRoundError extends Error {
+    constructor(readonly event: string) {
+        super('整局丢弃并重建会话: ' + event + ' 返回 error-only');
+        this.name = 'AGDiscardedRoundError';
+    }
+}
+
 export class AGInitialSpinResponseError extends Error {
     constructor(readonly reason: 'error-only') {
         super('initial Spin discarded; reset session: ' + reason);
@@ -304,6 +312,9 @@ async function callFirstSuccessful(
                 data,
             };
         } catch (error) {
+            if (error instanceof AGProviderResponseError && error.reason === 'error-only') {
+                throw new AGDiscardedRoundError(error.event);
+            }
             const message = error instanceof Error ? error.message : String(error);
             errors.push(`${candidate.event}: ${message}`);
             if (index === unique.length - 1 || !isProtocolRetryable(error)) {
@@ -729,6 +740,7 @@ export async function captureAGRound(
         try {
             completed = await callFirstSuccessful(session, candidates);
         } catch (error) {
+            if (error instanceof AGDiscardedRoundError) throw error;
             const message = error instanceof Error ? error.message : String(error);
             throw new Error(`${message} context=${protocolContext(action, current)}`);
         }
