@@ -579,6 +579,17 @@ export function buildLegacySpinParams(coinSize: string, numberOfCoins: string): 
     return { autoPlay: 'false', coinSize, numberOfCoins };
 }
 
+// Tiki Totems Megaways 官方前端 2.0.15 协议：Cascade / FreeCascade / FreeSpin 只携带 autoplay，不带投注字段。
+// 采集器内部同一事件存在多种拼写（freeSpin / freespin / FreeSpins / freespincascade 等，见 ag.round.ts 的事件映射
+// 与协商别名），故统一按小写归一化比较，避免因拼写差异漏判。
+export const MEGAWAYS_AUTOPLAY_ONLY_EVENTS: ReadonlySet<string> = new Set([
+    'cascade',
+    'freecascade',
+    'freespincascade',
+    'freespin',
+    'freespins',
+]);
+
 export function buildFollowUpParams(coinSize: string, numberOfCoins: string): Record<string, any> {
     return {
         coinSize,
@@ -867,6 +878,14 @@ export class RoxorCometDSession {
     }
 
     getActionParams(_action: string, event: string): Record<string, any> | null {
+        // 已核对的 Tiki Totems Megaways 官方前端 2.0.15：artifact 级事实优先于下列协议分支——
+        // Cascade / FreeCascade / FreeSpin 一律只带 autoplay（小写），不带任何投注字段；
+        // 只有 Spin 带 coinSize/numberOfCoins（官方 Spin 另带 autoplay，我们只发投注两字段，实测可用，本次不动）。
+        // 带上投注字段会被上游判 MalformedRequest。
+        if (this.game.backendArtifactId === 'rgp-game-tiki-totem-megaways'
+            && MEGAWAYS_AUTOPLAY_ONLY_EVENTS.has(String(event || '').trim().toLowerCase())) {
+            return { autoplay: 'false' };
+        }
         if (this.protocol === 'wager-first' || this.protocol === 'instant') {
             return {};
         }
