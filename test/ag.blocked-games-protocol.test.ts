@@ -6,7 +6,7 @@
 //  - Secrets of the Phoenix Elements 3.4.0：只有 spin 带投注字段，其余裸发；pick/freepick 只带 pickIndex
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RoxorCometDSession } from '../src/ag.client';
+import { RoxorCometDSession, parseResponseText } from '../src/ag.client';
 import { captureAGRound } from '../src/ag.round';
 
 const sessionOf = (gameId: string, name: string, backendArtifactId: string) =>
@@ -193,4 +193,18 @@ test('Wonders of The Deep：PICK 状态走 boardPickEvent{row,column} 行优先�
 test('Wonders 特判不影响其他游戏：More Chilli 的 PICK 无 boardPickEvent 协议（无回归）', () => {
     const other = sessionOf('play-more-chilli', 'More Chilli', '');
     assert.equal(other.getPickProtocol?.('PICK', {}, []), undefined);
+});
+
+test('parseResponseText：Wonders 选板响应的 PickResultEvent.type 决定继续选板或回基础局', () => {
+    const keepPicking = parseResponseText({
+        channel: '/service/game',
+        data: { responseText: '<?xml version="1.0"?><Events><PlayModeEvent mode="PICK"/><PickResultEvent type="REVEAL" win="0.50"/><GameMetadataEvent/></Events>' },
+    }, 'boardPickEvent');
+    assert.equal(keepPicking.NextActionInfo.nextAction, 'PICK');
+
+    const done = parseResponseText({
+        channel: '/service/game',
+        data: { responseText: '<?xml version="1.0"?><Events><PlayModeEvent mode="PLAY"/><PickResultEvent type="PLAY" win="12.00"/><GameMetadataEvent/></Events>' },
+    }, 'boardPickEvent');
+    assert.equal(done.NextActionInfo.nextAction, 'SPIN');
 });

@@ -183,6 +183,16 @@ function resolveXmlNextAction(events: Record<string, any>, event: string): strin
     if (hasXmlEvent(events, 'RoundEvent')) {
         return 'PICK';
     }
+    // Wonders of The Deep 3.0.20 的选板结果事件：官方测试脚本以 PickResultEvent.type 收敛——
+    // type 为 PLAY 表示选板结束回基础局；其余类型（或缺省）表示选板仍在继续。
+    // 该分支只影响响应中出现 PickResultEvent 的情况；既往健康游戏的响应不含此事件，行为不变。
+    const pickResultEvent = getXmlEvent(events, 'PickResultEvent');
+    if (pickResultEvent) {
+        if (String(pickResultEvent.type || '').toUpperCase() === 'PLAY') {
+            return 'SPIN';
+        }
+        return 'PICK';
+    }
     if (
         hasXmlEvent(events, 'PickBonusResultEvent')
         || hasXmlEvent(events, 'GameOverEvent')
