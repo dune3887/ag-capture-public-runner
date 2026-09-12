@@ -208,3 +208,30 @@ test('parseResponseText：Wonders 选板响应的 PickResultEvent.type 决定继
     }, 'boardPickEvent');
     assert.equal(done.NextActionInfo.nextAction, 'SPIN');
 });
+
+test('parseResponseText：免费转结算响应里的 PickBonusEvent 不得被当作可操作选板（官方 D 条件）', () => {
+    const settlement = parseResponseText({
+        channel: '/service/game',
+        data: { responseText: '<?xml version="1.0"?><Events><PlayModeEvent/><DisplayReelsEvent><Reel id="0"><Symbol id="0" value="11"/></Reel></DisplayReelsEvent>' +
+            '<UpdateFreeSpinCountEvent coinSize="0.15" freeSpinsRemaining="0" multiplier="3" winTotal="38.25"/>' +
+            '<DisplayBonusEvent accumulativeFreeSpinWin="38.25" extraBonusWin="9.45" totalBonusGameWinnings="47.70"/>' +
+            '<HideFreeSpinEvent/><PickBonusEvent/><EnableGameEvent/><GameMetadataEvent/></Events>' },
+    }, 'freeSpin');
+    assert.equal(settlement.NextActionInfo.nextAction, 'SPIN', '结算态必须回基础局 spin，不得发选板');
+
+    const baseTrigger = parseResponseText({
+        channel: '/service/game',
+        data: { responseText: '<?xml version="1.0"?><Events><PlayModeEvent/><DisplayReelsEvent><Reel id="0"><Symbol id="0" value="11"/></Reel></DisplayReelsEvent>' +
+            '<DisplayWinEvent balance="1990.85" grossWin="0.00"/>' +
+            '<PickBonusEvent initiatingLines="3"><InitiatingSymbols><Reel id="0"><Symbol id="0" value="11"/></Reel></InitiatingSymbols></PickBonusEvent>' +
+            '<GameMetadataEvent/></Events>' },
+    }, 'spin');
+    assert.equal(baseTrigger.NextActionInfo.nextAction, 'PICK', '基础局触发仍须进入选板');
+
+    const midFreeSpinRetrigger = parseResponseText({
+        channel: '/service/game',
+        data: { responseText: '<?xml version="1.0"?><Events><PlayModeEvent/><UpdateFreeSpinCountEvent coinSize="0.15" freeSpinsRemaining="5" multiplier="2" winTotal="1.00"/>' +
+            '<PickBonusEvent/><GameMetadataEvent/></Events>' },
+    }, 'freeSpin');
+    assert.equal(midFreeSpinRetrigger.NextActionInfo.nextAction, 'FREE_SPIN', '免费转未结束时仍继续免费转');
+});

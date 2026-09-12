@@ -175,7 +175,17 @@ function resolveXmlNextAction(events: Record<string, any>, event: string): strin
         return 'FREE_SPIN';
     }
     if (hasXmlEvent(events, 'PickBonusEvent')) {
-        return 'PICK';
+        // 已核对的 Wonders of The Deep 3.0.20 官方前端判定：
+        // D = !(!PickBonusEvent || UpdateFreeSpinCount || HideFreeSpinEvent) —— 只有响应不含免费转计数/隐藏事件时，
+        // PickBonusEvent 才代表"可操作的选板"。免费转结算响应同样携带 PickBonusEvent（用于展示/派生奖励），
+        // 此时发送选板请求会被 provider 判 MalformedRequest（本机实测：15 格全被拒；正确动作是继续基局 spin）。
+        const freeSpinSettlement = hasXmlEvent(events, 'UpdateFreeSpinCountEvent')
+            || hasXmlEvent(events, 'HideFreeSpinEvent');
+        if (!freeSpinSettlement) {
+            return 'PICK';
+        }
+        // 免费转已结算完毕（freeSpinsRemaining 为 0 或缺失；remaining>0 的续转已在上方返回 FREE_SPIN）。
+        return 'SPIN';
     }
     if (hasXmlEvent(events, 'MultiRoundPickBonusEvent')) {
         return 'PICK';
